@@ -1,0 +1,171 @@
+name: ci
+
+# Gate for merging into main: everything here must pass on the PR head.
+# Mirrors .pre-commit-config.yaml plus the real test/build steps that pre-commit
+# cannot run (pytest needs the api/ dependency set, bicep needs the compiler).
+# Deploys are separate — see teardown.yml and docs/PLAN.md § Cost & safety.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A new push to the same PR supersedes the previous run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint & formatting (pre-commit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v7
+
+      # Pinned literally, not via .python-version: that file is git-ignored,
+      # so it does not exist on the runner.
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Cache pre-commit environments
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
+
+      # --all-files is the deliberate CI baseline; locally the hooks run on
+      # staged files only (see AGENTS.md).
+      - name: Run pre-commit on all files
+        uses: pre-commit/action@v3.0.1
+
+  test:
+    name: Tests (api)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # api/ arrives with Phase 1's skeleton service and Phase 2's real one. Until
+    # requirements.txt exists there is nothing to install, so the job no-ops
+    # rather than failing on a missing file. Remove this guard once Phase 1 lands.
+    if: ${{ hashFiles('api/requirements.txt') != '' }}
+
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: api/requirements.txt
+
+      - name: Install dependencies
+        working-directory: api
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # Tests import `main` via a sys.path insert, so pytest runs from api/.
+      - name: Run pytest
+        working-directory: api
+        run: pytest -q
+
+  infra:
+    name: IaC build (bicep)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # infra/ arrives with Phase 1. Guard so this job is green on the docs-only
+    # scaffold rather than erroring on a missing directory.
+    if: ${{ hashFiles('infra/*.bicep') != '' }}
+
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v7
+
+      # Installs the standalone bicep binary, not `az bicep`: the azure/CLI
+      # action requires an inlineScript input and runs in a container,
+      # which is the wrong shape for a build-only check.
+      - name: Install Bicep CLI
+        env:
+          # Bump deliberately; keep in step with the bicep version installed by
+          # the local `az bicep` used in the bicep-format pre-commit hook.
+          BICEP_VERSION: v0.48.1
+        run: |
+          set -euo pipefail
+          echo "Using bicep $BICEP_VERSION"
+          # Into ~/.local/bin, not /usr/local/bin: the runner user cannot
+          # write there.
+          mkdir -p ~/.local/bin
+          curl -fsSL -o ~/.local/bin/bicep \
+            "https://github.com/Azure/bicep/releases/download/$BICEP_VERSION/bicep-linux-x64"
+          chmod +x ~/.local/bin/bicep
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          bicep --version
+
+      - name: Build every bicep file
+        run: |
+          set -euo pipefail
+          rc=0
+          while IFS= read -r file; do
+            echo "::group::bicep build $file"
+            if bicep build "$file" --stdout >/dev/null; then
+              echo "ok"
+            else
+              echo "::error::bicep build failed for $file"
+              rc=1
+            fi
+            echo "::endgroup::"
+          done < <(find infra -name '*.bicep' | sort)
+          exit "$rc"
+
+      # Matches the bicep-format local hook in .pre-commit-config.yaml: Space
+      # indent, size 2, final newline. Formats a copy of the whole tree so
+      # module paths still resolve, then diffs, so a failure shows the exact
+      # change instead of silently rewriting the repo.
+      - name: Check bicep formatting
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"
+          cp -r infra "$tmp/infra"
+          while IFS= read -r file; do
+            bicep format "$file" --outfile "$file" \
+              --indent-kind Space --indent-size 2 --insert-final-newline
+          done < <(find "$tmp/infra" -name '*.bicep' | sort)
+          diff -ru infra "$tmp/infra"
+
+  shell:
+    name: Shell scripts
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # scripts/ arrives with Phase 1's teardown.sh.
+    if: ${{ hashFiles('scripts/*.sh') != '' }}
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # Syntax errors in a script only surface at run time, so fail on those.
+      - name: bash -n
+        run: |
+          set -euo pipefail
+          while IFS= read -r file; do
+            echo "::group::bash -n $file"
+            bash -n "$file"
+            echo "::endgroup::"
+          done < <(find scripts -name '*.sh' | sort)
+
+      # Informational for now: the memorywell originals already carry SC2155
+      # (export X="$(...)") and common.sh is sourced, so SC2148 has no shebang
+      # to find. Drop continue-on-error once those are cleaned up to make
+      # shellcheck a gate.
+      - name: shellcheck
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          shellcheck --severity=warning --exclude=SC2148 scripts/*.sh

@@ -1,0 +1,103 @@
+name: teardown
+
+# Nightly cost control, not a development convenience.
+#
+# The meter runs whether or not anyone is looking at the repo, so this workflow
+# exists permanently and must never be deleted, disabled or commented out when a
+# phase ends, a deploy breaks, or the project goes quiet. Its entire value is
+# that it fires when nobody is watching.
+#
+# PHASE 1 STATUS: the steps below are placeholders. scripts/teardown.sh arrives
+# with Phase 1's scaffold, so nothing destructive can run yet -- every step is an
+# inert `echo "to be implemented"`. Replace each one with the command named in
+# its comment as the real script lands, and only then does this workflow become
+# armed. Do not put a real `az group delete` here before scripts/teardown.sh
+# exists: that would delete a resource group with no pre-check and no verification.
+#
+# Design rationale: docs/PLAN.md § Cost & safety.
+on:
+  # 03:17 UTC rather than 03:00 -- GitHub's scheduled workflows queue on the
+  # hour, and the top of the hour is the slowest slot to start.
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+    inputs:
+      environment_name:
+        description: Override the environment to tear down (defaults to the repo variable).
+        required: false
+        type: string
+      purge_vault:
+        description: Purge the soft-deleted Key Vault so the next same-name deploy can proceed.
+        required: false
+        default: true
+        type: boolean
+
+# `id-token: write` is what makes OIDC possible. There is no stored client
+# secret anywhere in this repo -- the credential is scoped to the `azure`
+# environment below, so a fork or an outside PR cannot mint a token.
+permissions:
+  contents: read
+  id-token: write
+
+# One teardown per environment, and never two at once. cancel-in-progress is
+# deliberately false: interrupting a half-finished resource-group delete is
+# exactly the race that leaves orphaned billable resources.
+concurrency:
+  group: teardown-${{ inputs.environment_name != '' && inputs.environment_name || vars.ENVIRONMENT }}
+  cancel-in-progress: false
+
+jobs:
+  teardown:
+    name: Tear down environment
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: azure
+
+    env:
+      # .env is git-ignored, so the pipeline cannot read these from a file.
+      BASE_NAME: ${{ vars.BASE_NAME }}
+      LOCATION: ${{ vars.LOCATION }}
+      ENVIRONMENT: ${{ inputs.environment_name != '' && inputs.environment_name || vars.ENVIRONMENT }}
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v7
+
+      # Pinned literally, not via .python-version: that file is git-ignored and
+      # so does not exist on the runner.
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Log in to Azure (OIDC, no client secret)
+        # Becomes: uses: azure/login@v2
+        #   with:
+        #     client-id: ${{ vars.AZURE_CLIENT_ID }}
+        #     tenant-id: ${{ vars.AZURE_TENANT_ID }}
+        #     subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        run: echo "to be implemented"
+
+      - name: Cheap pre-check
+        # Becomes: scripts/teardown.sh --precheck
+        # Report and skip every destructive step when rg-oop-<env> does not exist
+        # and no Key Vault is soft-deleted. Almost every nightly run takes this
+        # branch, which is the point: the common case must cost nothing.
+        run: echo "to be implemented"
+
+      - name: Destroy the environment resource group
+        # Becomes: scripts/teardown.sh --purge-vault
+        # Order matters -- rg-oop-<env> first, rg-oop-shared only with --shared.
+        # Reversed, a running container app can try to pull images mid-teardown.
+        # Nightly runs purge the vault; local runs keep --purge-vault opt-in
+        # because resource-group deletion is async and the vault may not be
+        # soft-deleted yet.
+        run: echo "to be implemented"
+
+      - name: Verify
+        # Becomes: scripts/teardown.sh --verify
+        # Re-check that rg-oop-<env> is gone and the vault is no longer
+        # soft-deleted. A silent partial teardown is the failure mode worth
+        # catching, because the cost it leaks is invisible until the next
+        # billing statement.
+        run: echo "to be implemented"

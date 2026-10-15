@@ -1,0 +1,10 @@
+node_modules
+.venv
+dist
+build
+coverage
+*.bicep
+pnpm-lock.yaml
+package-lock.json
+LICENSE
+.git/
