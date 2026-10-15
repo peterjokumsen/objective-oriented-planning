@@ -1,0 +1,46 @@
+# Formatting is enforced from the very first commit, deliberately.
+# Retrofitting a formatter later produces one enormous, conflict-heavy reformat
+# commit that destroys reviewability and buries real changes. Reviewed against
+# memorywell's copy rather than copied blind.
+#
+# `proseWrap: preserve` in .prettierrc.json is load-bearing: without it, the
+# hand-written plan docs get hard-wrapped and every paragraph reflows on each run.
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-merge-conflict
+      - id: check-yaml
+        files: \.(yaml|yml)$
+      - id: mixed-line-ending
+        args: [--fix=lf]
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.12.3
+    hooks:
+      - id: ruff
+        args: [--fix]
+        files: \.py$
+      - id: ruff-format
+        files: \.py$
+
+  - repo: https://github.com/pre-commit/mirrors-prettier
+    rev: v3.1.0
+    hooks:
+      - id: prettier
+        files: \.(ts|tsx|js|jsx|json|css|scss|md|yaml|yml)$
+        exclude: ^(pnpm-lock\.yaml|package-lock\.json|LICENSE)$
+
+  - repo: local
+    hooks:
+      # Bicep has no upstream pre-commit hook, so wrap `az bicep format` directly.
+      # Keep the flags in step with the format check in .github/workflows/ci.yml,
+      # which fails the build on drift rather than rewriting files.
+      - id: bicep-format
+        name: bicep format
+        entry: bash -c 'for f in "$@"; do az bicep format --indent-kind Space --indent-size 2 --insert-final-newline --file "$f"; done' --
+        language: system
+        types: [file]
+        files: \.bicep$
