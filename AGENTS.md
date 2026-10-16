@@ -8,20 +8,23 @@
 
 ## Current state
 
-Phase 1 has **not started**. This repo is documentation and governance only —
-`infra/`, `api/`, `web/`, `scripts/` do not exist yet. **Never assume code
-exists; check first.**
+Phase 1 is **built but not yet committed** — `infra/`, `api/` and `scripts/`
+exist and have been deployed live, teardown and redeployed. See
+`docs/phase-1/_brief.md` for the step files and § Build mode below for how it
+was built. `web/` does not exist yet; theming lands with it in Phase 4.
 
-`.github/workflows/teardown.yml` exists but is an **inert skeleton**: every step
-is `echo "to be implemented"` because `scripts/teardown.sh` has not landed. It
-runs on schedule and deletes nothing. Do not infer from reading it that teardown
-is live, and do not "arm" it by pasting in an `az group delete` before the real
-script exists — that would delete a resource group with no pre-check and no
-verification. `docs/CI_TEARDOWN.md` is still a Phase 1 deliverable.
+`.github/workflows/teardown.yml` is **armed**: every step delegates to
+`scripts/teardown.sh` (`--precheck` → `--purge-vault` → `--verify`) and no
+`az group delete` is inlined, because the script holds the pre-check, the
+ordering and the verification. It still deletes nothing until its OIDC setup is
+done — see `docs/CI_TEARDOWN.md` § 1–2 for the app registration, RBAC,
+federated credential and GitHub environment. Until that is configured, a nightly
+run fails at `azure/login`, and that is the safe failure.
 
-The `test`, `infra` and `shell` CI jobs are guarded by `hashFiles` so they no-op
-until those paths arrive. Remove each guard as its directory lands; a
-permanently-skipped gate is worse than no gate.
+The `test`, `infra` and `shell` CI jobs are **unguarded** as of Phase 1 — the
+`hashFiles` guards are gone and all four jobs are real gates. If one ever goes
+back to skipping, that is a regression: a permanently-skipped gate is worse than
+no gate.
 
 ## Workflow
 
@@ -35,17 +38,46 @@ permanently-skipped gate is worse than no gate.
 
 ### Verifying before you push
 
-- Python: `pytest -q` **from `api/`** — tests import the app via a `sys.path`
-  insert, so a repo-root `pytest` will not resolve it. Single test:
-  `pytest tests/test_rollup.py::test_unassigned_child -q` (still from `api/`).
+- Python: `pytest -q` **from `api/`**, matching CI's `working-directory`. The
+  tests insert `api/` onto `sys.path` themselves so a repo-root run also works,
+  but run it the way CI does or a local pass tells you nothing. Single test (from
+  Phase 2 onward): `pytest tests/test_rollup.py::test_unassigned_child -q`.
+- **Never run another project's scripts from this repo's directory.** Our scripts
+  now resolve templates and the API context through `$ROOT`
+  (`$ROOT/infra/main.bicep`, `$ROOT/api`), so they act on _their own_ repo no
+  matter where they are invoked from — but memorywell's older copies still use
+  relative paths, so running one of those from here resolves _our_ template and
+  creates memorywell's resources in _our_ subscription. `cd` into the owning repo
+  first when using another project's scripts.
+- Every `az` / `curl` call in `scripts/` goes through `run`, `run_hide_stderr`
+  or `run_quiet`, which echo `+ <cmd>` to **stderr** and append it to
+  `logs/<name>-<ts>.log`. Keep it that way: the stderr split is what lets
+  `X=$(run az ...)` capture only the command's output. Moving either `run` or
+  `init_command_log` to stdout silently corrupts every `$(...)` capture. And
+  never append `2>/dev/null` to `run` — that redirects `run` itself and swallows
+  the trace; use `run_hide_stderr`. `logs/` is git-ignored.
+- **Deployment names are minted lazily** (`deployment_name`, `image_tag`), never
+  at source time. Keep it that way: `deploy-all.sh` and `teardown.sh --precheck`
+  source `common.sh` but never deploy, so an eager name would overwrite
+  `$LAST_DEPLOYMENT_FILE` and make the next real deploy reuse a stale timestamp.
+- **Read ARM outputs with `fetch_deployment_outputs`, never a bare
+  `az deployment sub show`.** Outputs can lag the deployment's `Succeeded` state
+  (eventual consistency), and `az -o tsv` drops null columns entirely, so a bare
+  read yields a silently empty `APP_NAME` and a baffling failure one command
+  later.
+- **`az account set` before any diagnostic query.** The CLI caches its active
+  subscription across contexts, so an unqualified `az group show` can report a
+  group "not found" in one shell and `Succeeded` in the next, sending you chasing
+  a phantom bug. Pass `--subscription` explicitly when verifying.
 - Bicep: `az bicep build --file infra/main.bicep --stdout`, and format check via
   `az bicep format --indent-kind Space --indent-size 2 --insert-final-newline
 --file <f>`.
-- Shell: `bash -n scripts/*.sh` and
-  `shellcheck --severity=warning --exclude=SC2148 scripts/*.sh`.
-- `shellcheck` is `continue-on-error` in CI today: the ported memorywell scripts
-  still carry SC2155 (`export X="$(...)"`) and source `common.sh`, so there is no
-  shebang for SC2148. Drop the guard once those are cleaned up.
+- Shell: `bash -n scripts/*.sh` and `shellcheck --severity=warning scripts/*.sh`.
+- `shellcheck` is a **real gate** in CI — no `--exclude` and no
+  `continue-on-error`. `common.sh` splits `export X="$(...)"` into a separate
+  assignment (SC2155 masks a failed command's exit status) and carries a shebang
+  plus a sourced-file guard (SC2148). Do not reintroduce either exemption: an
+  exclusion that exists to survive new code is an exclusion nobody reviews.
 - `BICEP_VERSION` (currently `v0.48.1`) in `ci.yml` must be kept in step with the
   `az bicep` version installed locally, or formatting differs between the hook and
   CI's diff.
@@ -68,6 +100,32 @@ permanently-skipped gate is worse than no gate.
      unblocks on errors but does not take over.
   3. Agent sanity-checks what was built (human shows or pastes output) before the
      next phase brief is issued.
+
+### Phase 1 exception — agent-implemented (2026-10-15)
+
+**Phase 1 was built by the agent, not by hand**, at the owner's explicit
+instruction. Steps 1–11 were implemented and deployed live against the
+development subscription. Steps 2–4 remain accurate as instruction; steps 8, 8a
+and 9 carry corrections from what the live runs revealed (see below).
+
+This is an exception, not a change of mode. **Phases 2+ follow the contract
+above** unless the owner says otherwise at the time. If a phase is ever
+agent-implemented again, record it here the same way rather than leaving the
+docs claiming a build style that did not happen.
+
+Two findings from the live runs are worth carrying forward, because both looked
+right until exercised against Azure:
+
+- **Do not add `revisionMode` to the container app.** It is rejected by Bicep's
+  type checker on every API version that has types (BCP037), which fails the whole
+  deployment. Container Apps already mints a new revision on every
+  `az containerapp update --image`; a lone revision after a first deploy is a
+  provisioning race, not single-revision mode. Confirm by deploying again before
+  changing anything.
+- **A teardown takes ~30 minutes**, almost entirely the Container Apps managed
+  environment draining. `teardown.sh --verify` polls ~40 min and the workflow's
+  `timeout-minutes` is 60 for that reason. Do not shorten either: a false
+  "still exists" fails the nightly job on a teardown that is succeeding.
 
 ## Repo rules
 

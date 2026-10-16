@@ -218,3 +218,8 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Command logs written by scripts/*.sh via init_command_log. They are a local
+# debugging aid for a failed deploy run, not an artefact worth committing --
+# they contain subscription ids and resource names.
+logs/

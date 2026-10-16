@@ -50,10 +50,6 @@ jobs:
     name: Tests (api)
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # api/ arrives with Phase 1's skeleton service and Phase 2's real one. Until
-    # requirements.txt exists there is nothing to install, so the job no-ops
-    # rather than failing on a missing file. Remove this guard once Phase 1 lands.
-    if: ${{ hashFiles('api/requirements.txt') != '' }}
 
     steps:
       - name: Check out repo
@@ -81,9 +77,6 @@ jobs:
     name: IaC build (bicep)
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # infra/ arrives with Phase 1. Guard so this job is green on the docs-only
-    # scaffold rather than erroring on a missing directory.
-    if: ${{ hashFiles('infra/*.bicep') != '' }}
 
     steps:
       - name: Check out repo
@@ -122,13 +115,14 @@ jobs:
               rc=1
             fi
             echo "::endgroup::"
-          done < <(find infra -name '*.bicep' | sort)
+          done < <(find infra \( -name '*.bicep' -o -name '*.bicepparam' \) | sort)
           exit "$rc"
 
       # Matches the bicep-format local hook in .pre-commit-config.yaml: Space
       # indent, size 2, final newline. Formats a copy of the whole tree so
       # module paths still resolve, then diffs, so a failure shows the exact
-      # change instead of silently rewriting the repo.
+      # change instead of silently rewriting the repo. Covers .bicep and
+      # .bicepparam alike (keep the find patterns in sync with the hook).
       - name: Check bicep formatting
         run: |
           set -euo pipefail
@@ -137,15 +131,13 @@ jobs:
           while IFS= read -r file; do
             bicep format "$file" --outfile "$file" \
               --indent-kind Space --indent-size 2 --insert-final-newline
-          done < <(find "$tmp/infra" -name '*.bicep' | sort)
+          done < <(find "$tmp/infra" \( -name '*.bicep' -o -name '*.bicepparam' \) | sort)
           diff -ru infra "$tmp/infra"
 
   shell:
     name: Shell scripts
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    # scripts/ arrives with Phase 1's teardown.sh.
-    if: ${{ hashFiles('scripts/*.sh') != '' }}
 
     steps:
       - uses: actions/checkout@v7
@@ -160,12 +152,11 @@ jobs:
             echo "::endgroup::"
           done < <(find scripts -name '*.sh' | sort)
 
-      # Informational for now: the memorywell originals already carry SC2155
-      # (export X="$(...)") and common.sh is sourced, so SC2148 has no shebang
-      # to find. Drop continue-on-error once those are cleaned up to make
-      # shellcheck a gate.
+      # A gate, not advice. common.sh splits `export X="$(...)"` into a
+      # separate assignment (SC2155 masks a failed command's exit status) and
+      # carries a shebang plus a sourced-file guard (SC2148), so no exclusions
+      # are needed.
       - name: shellcheck
-        continue-on-error: true
         run: |
           set -euo pipefail
-          shellcheck --severity=warning --exclude=SC2148 scripts/*.sh
+          shellcheck --severity=warning scripts/*.sh

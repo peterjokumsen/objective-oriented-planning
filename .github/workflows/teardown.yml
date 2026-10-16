@@ -7,12 +7,13 @@ name: teardown
 # phase ends, a deploy breaks, or the project goes quiet. Its entire value is
 # that it fires when nobody is watching.
 #
-# PHASE 1 STATUS: the steps below are placeholders. scripts/teardown.sh arrives
-# with Phase 1's scaffold, so nothing destructive can run yet -- every step is an
-# inert `echo "to be implemented"`. Replace each one with the command named in
-# its comment as the real script lands, and only then does this workflow become
-# armed. Do not put a real `az group delete` here before scripts/teardown.sh
-# exists: that would delete a resource group with no pre-check and no verification.
+# ARMED as of Phase 1. Each step calls scripts/teardown.sh --precheck /
+# --purge-vault / --verify rather than inlining `az group delete`: the script
+# holds the pre-check, the ordering and the verification, and a raw delete here
+# would have none of them. Do not inline one.
+#
+# Setup -- the app registration, RBAC, federated credential and GitHub
+# environment -- is documented in docs/CI_TEARDOWN.md.
 #
 # Design rationale: docs/PLAN.md § Cost & safety.
 on:
@@ -50,7 +51,14 @@ jobs:
   teardown:
     name: Tear down environment
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Must exceed teardown.sh --verify's ~40 min poll budget. A real teardown of
+    # rg-oop-dev took ~30 min for the Container Apps managed environment to drain;
+    # a timeout below that kills the job mid-verify and reports a false failure.
+    timeout-minutes: 60
+    # `azure` here is a GitHub Environment (protection rules + the OIDC federated
+    # credential; see docs/CI_TEARDOWN.md) -- not to be confused with the
+    # `environment_name` workflow *input*, which is the resource-group name suffix
+    # in rg-oop-<environment_name>.
     environment: azure
 
     env:
@@ -71,33 +79,43 @@ jobs:
           python-version: "3.11"
 
       - name: Log in to Azure (OIDC, no client secret)
-        # Becomes: uses: azure/login@v2
-        #   with:
-        #     client-id: ${{ vars.AZURE_CLIENT_ID }}
-        #     tenant-id: ${{ vars.AZURE_TENANT_ID }}
-        #     subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-        run: echo "to be implemented"
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      # Read-only. Publishes needs_teardown so the destructive step can be
+      # skipped. Almost every nightly run takes the "nothing to tear down" branch,
+      # which is the point: the common case must cost nothing.
       - name: Cheap pre-check
-        # Becomes: scripts/teardown.sh --precheck
-        # Report and skip every destructive step when rg-oop-<env> does not exist
-        # and no Key Vault is soft-deleted. Almost every nightly run takes this
-        # branch, which is the point: the common case must cost nothing.
-        run: echo "to be implemented"
+        id: precheck
+        run: ./scripts/teardown.sh --precheck
 
+      # Order matters -- rg-oop-<env> first, rg-oop-shared only with --shared.
+      # Reversed, a running container app can try to pull images mid-teardown.
+      # Nightly runs purge the vault; local runs keep --purge-vault opt-in
+      # because resource-group deletion is async and the vault may not be
+      # soft-deleted yet.
       - name: Destroy the environment resource group
-        # Becomes: scripts/teardown.sh --purge-vault
-        # Order matters -- rg-oop-<env> first, rg-oop-shared only with --shared.
-        # Reversed, a running container app can try to pull images mid-teardown.
-        # Nightly runs purge the vault; local runs keep --purge-vault opt-in
-        # because resource-group deletion is async and the vault may not be
-        # soft-deleted yet.
-        run: echo "to be implemented"
+        if: steps.precheck.outputs.needs_teardown == 'true'
+        run: |
+          set -euo pipefail
+          flags=()
+          if [[ "${{ inputs.purge_vault }}" == "true" ]]; then
+            flags+=(--purge-vault)
+          fi
+          ./scripts/teardown.sh "${flags[@]}"
 
+      - name: Nothing to tear down
+        if: steps.precheck.outputs.needs_teardown != 'true'
+        run: echo "rg-oop-${{ env.ENVIRONMENT }} is absent and no vault is soft-deleted; skipping the destructive step."
+
+      # Re-check that rg-oop-<env> is gone and the vault is no longer
+      # soft-deleted. A silent partial teardown is the failure mode worth
+      # catching, because the cost it leaks is invisible until the next billing
+      # statement. teardown.sh polls ~40 min for the RG (the Container Apps
+      # managed environment is slow to drain), so timeout-minutes must exceed it.
       - name: Verify
-        # Becomes: scripts/teardown.sh --verify
-        # Re-check that rg-oop-<env> is gone and the vault is no longer
-        # soft-deleted. A silent partial teardown is the failure mode worth
-        # catching, because the cost it leaks is invisible until the next
-        # billing statement.
-        run: echo "to be implemented"
+        if: steps.precheck.outputs.needs_teardown == 'true'
+        run: ./scripts/teardown.sh --verify

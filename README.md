@@ -4,8 +4,9 @@ Declare one objective; AI decomposes it into a weighted tree you and your helper
 actually keep moving. Recurring work is a **bounded block**, not an open-ended
 habit.
 
-> **Status:** Phase 1 — Foundation. **Not started.** This repo currently holds
-> documentation and repo governance only; there is no application code yet.
+> **Status:** Phase 1 — Foundation. **In progress.** The brief lives in
+> [`docs/phase-1/`](docs/phase-1/_brief.md) and is being built by hand; there is
+> still no application code in the repo.
 
 ## What it is
 
@@ -49,7 +50,7 @@ phases.
 
 | #   | Phase                                                                 | State           |
 | --- | --------------------------------------------------------------------- | --------------- |
-| 1   | Foundation — Bicep, repo scaffold, teardown + nightly CI teardown     | **not started** |
+| 1   | Foundation — Bicep, repo scaffold, teardown + nightly CI teardown     | **in progress** |
 | 2   | Data + core API — Cosmos, domain types, pure rollup and block scoring | not started     |
 | 3   | Identity + invites                                                    | not started     |
 | 4   | Tree UI + permissions                                                 | not started     |
@@ -66,10 +67,14 @@ implemented by hand, and closes with a review gate.
   time; CI runs the full set on every PR.
 - CI (`.github/workflows/ci.yml`) is the merge gate: pre-commit, `pytest`,
   `bicep build`, shell syntax.
-- Deploys are manual. The nightly [`teardown`](.github/workflows/teardown.yml)
-  workflow exists so the meter stops when nobody is paying attention — do not
-  delete or disable it. It is a placeholder skeleton until `scripts/teardown.sh`
-  lands in Phase 1.
+- Deploys are manual. `./scripts/deploy-all.sh` provisions shared resources then
+  the environment; `./scripts/check-state.sh` reports provisioning state and exits
+  non-zero if anything is not `Succeeded`. Every `az` call is recorded to a
+  git-ignored `logs/<script>-<timestamp>.log`.
+- The nightly [`teardown`](.github/workflows/teardown.yml) workflow exists so the
+  meter stops when nobody is paying attention — do not delete or disable it. It
+  is armed and delegates to `scripts/teardown.sh`; it needs the one-time OIDC
+  setup in [`docs/CI_TEARDOWN.md`](docs/CI_TEARDOWN.md) before it can log in.
 - Azure-first, IaC is Bicep. Cheapest viable tier of every service; nothing runs
   between study sessions.
 

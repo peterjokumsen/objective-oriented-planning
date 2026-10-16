@@ -1,0 +1,6 @@
+{
+  "name": "oop-teardown-env-azure",
+  "issuer": "https://token.actions.githubusercontent.com",
+  "subject": "repo:peterjokumsen@7055026/objective-oriented-planning@1420733363:environment:azure",
+  "audiences": ["api://AzureADTokenExchange"]
+}
