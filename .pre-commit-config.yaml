@@ -43,4 +43,4 @@ repos:
         entry: bash -c 'for f in "$@"; do az bicep format --indent-kind Space --indent-size 2 --insert-final-newline --file "$f"; done' --
         language: system
         types: [file]
-        files: \.bicep$
+        files: \.bicep(param)?$

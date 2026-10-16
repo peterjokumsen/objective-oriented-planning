@@ -1,0 +1,6 @@
+fastapi==0.116.1
+uvicorn[standard]==0.35.0
+# Required by fastapi.testclient; without it the tests fail on import, which
+# reads like a FastAPI problem and is not one.
+httpx==0.28.1
+pytest==8.3.4

@@ -13,8 +13,8 @@ that resolves to successful / partial / missed and can be renewed.
 > of what was decided before any code was written; this file is what the build
 > actually follows and may be edited as the plan is realised.
 > **Build repo:** `~/repos/objective-oriented-planning`
-> (github.com/peterjokumsen/objective-oriented-planning) — **Phase 1 not yet
-> started** (docs and repo scaffold only).
+> (github.com/peterjokumsen/objective-oriented-planning) — **Phase 1 in
+> progress**; brief at `docs/phase-1/_brief.md`, no application code yet.
 >
 > New ideas about where the project should go do **not** belong here — they go
 > in `~/repos/think-tank/objective-oriented-planning/FUTURE.md`. A change to
@@ -923,8 +923,17 @@ The distinction matters for observers: an observer sees the plan's colour and
 font, but keeps their own display mode. A `progress` observer who prefers dark
 still gets dark.
 
-Both must exist from Phase 1. Theming applied after a UI exists means reworking
-every style declaration, which is the same retrofitting problem the `pre-commit`
-rule exists to avoid. No component library is committed to here — Phase 1's
-brief decides between CSS custom properties and a library, and that choice is
-reversible as long as it is made early.
+Theming lands in **Phase 4**, with the first UI, and not in Phase 1. Theming
+applied after a UI exists means reworking every style declaration, which is the
+same retrofitting problem the `pre-commit` rule exists to avoid — so the point is
+that it is decided _before_ the tree UI is written, not that it is built before
+the UI exists. Phase 1 records the choice; Phase 4 implements it.
+
+**The choice: CSS custom properties, no component library.** Plan aesthetics are
+data on the plan (`colourTheme`, `fontFamily`), so they have to be resolved at
+runtime onto whatever the styles read. Custom properties are the cheapest way to
+express "a value the owner set, applied to everything", and a component library
+would work against that by baking colours into components at build time. A
+library remains worth revisiting if the tree view turns into something a
+hand-rolled component set cannot carry — but the bar is set by theming, not by
+comfort.
