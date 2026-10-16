@@ -153,7 +153,7 @@ right until exercised against Azure:
   the group to vanish, and the workflow allows 90 min. Do not shorten them.
 - **"Not found" is ambiguous right after an RG delete.** For ~12 s afterwards the
   Key Vault is neither live nor soft-deleted. Skip the purge only when the vault
-  was **not live when the run started** (`VAULT_WAS_LIVE`, probed *before* the
+  was **not live when the run started** (`VAULT_WAS_LIVE`, probed _before_ the
   delete) — not when "no group was deleted this run", which wrongly blocks the
   skip on a re-run while the group is still draining. Getting this wrong either
   leaves the vault soft-deleted (blocking the next deploy) or waits 20 min for a
