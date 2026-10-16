@@ -191,15 +191,23 @@ The agent sanity-checks these before issuing the Phase 2 brief.
 Three defects were invisible to local checks and only appeared once CI and the
 nightly workflow actually ran. They are recorded because the pattern recurs:
 
-| Found by | Defect | Fix |
-| --- | --- | --- |
-| First live deploy | Misdiagnosed a lone revision as single-revision mode and added `revisionMode: 'Multiple'` — which **failed the whole deployment** (BCP037) | Reverted; revisions already work. Do not "fix" this again |
-| First teardown | `--verify` budgeted ~5 min; the managed environment takes ~30, so it reported a **false failure** | ~40 min poll, workflow `timeout-minutes: 60` |
-| **CI (PR #2)** | `bicep build` **rejects** `.bicepparam` ("must use the .bicep extension"), so extending the build loop broke the IaC job — while `bicep format` accepts it | Build loop stays `.bicep`; format check covers both |
-| **Nightly dispatch** | The workflow injected `AZURE_SUBSCRIPTION_ID` but `common.sh` requires `SUBSCRIPTION_ID`, so **every** run died at the pre-check | Inject the `.env` name; `azure/login` reads the secret via `with:` |
+| Found by             | Defect                                                                                                                                                                                                                                    | Fix                                                                                                                                                                      |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| First live deploy    | Misdiagnosed a lone revision as single-revision mode and added `revisionMode: 'Multiple'` — which **failed the whole deployment** (BCP037)                                                                                                | Reverted; revisions already work. Do not "fix" this again                                                                                                                |
+| First teardown       | `--verify` budgeted ~5 min; the managed environment takes ~30, so it reported a **false failure**                                                                                                                                         | ~40 min poll, workflow `timeout-minutes: 60`                                                                                                                             |
+| **CI (PR #2)**       | `bicep build` **rejects** `.bicepparam` ("must use the .bicep extension"), so extending the build loop broke the IaC job — while `bicep format` accepts it                                                                                | Build loop stays `.bicep`; format check covers both                                                                                                                      |
+| **Nightly dispatch** | The workflow injected `AZURE_SUBSCRIPTION_ID` but `common.sh` requires `SUBSCRIPTION_ID`, so **every** run died at the pre-check                                                                                                          | Inject the `.env` name; `azure/login` reads the secret via `with:`                                                                                                       |
+| **Nightly dispatch** | The purge step skipped the Key Vault: 12 s after the async RG delete the vault was _neither live nor soft-deleted_, which the "nothing to purge" branch read as already-purged. The vault stayed soft-deleted and `--verify` failed on it | Skip that branch only when the vault was **not live when the run started** (`VAULT_WAS_LIVE`, probed before the delete); vault wait 5 → 20 min, workflow timeout 60 → 90 |
 
 The last two are the argument for both gates existing: the build-only checks
-passed locally, and only CI and a real dispatch found the rest.
+passed locally, and only CI and a real dispatch found the rest. The vault bug is
+worth remembering for two reasons. It was invisible to the repeat-run test that
+_motivated_ the skip branch — it only appears on the first teardown after a
+deploy. And the obvious first fix ("skip only if we didn't delete the group this
+run") was also wrong: on a re-run while the group is still draining, that blocks
+the skip and then waits 20 minutes for a vault that was already purged. The
+question that actually separates the two cases is whether the vault was live when
+the run _started_, which is why the probe happens before the delete.
 
 **Cost reminder.** The environment RG is destroyed between study sessions via
 `scripts/teardown.sh`; the nightly workflow does it when you forget. While

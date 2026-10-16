@@ -49,15 +49,15 @@ Phases are **strictly sequential, one brief at a time** — no skipping ahead an
 no pre-implementation of later phases. Full table in `docs/PLAN.md` § Build
 phases.
 
-| #   | Phase                                                                 | State           |
-| --- | --------------------------------------------------------------------- | --------------- |
-| 1   | Foundation — Bicep, repo scaffold, teardown + nightly CI teardown     | **complete**    |
-| 2   | Data + core API — Cosmos, domain types, pure rollup and block scoring | not started     |
-| 3   | Identity + invites                                                    | not started     |
-| 4   | Tree UI + permissions                                                 | not started     |
-| 5   | Coach agent                                                           | not started     |
-| 6   | Unattended coaching                                                   | not started     |
-| 7   | Observability + hardening                                             | not started     |
+| #   | Phase                                                                 | State        |
+| --- | --------------------------------------------------------------------- | ------------ |
+| 1   | Foundation — Bicep, repo scaffold, teardown + nightly CI teardown     | **complete** |
+| 2   | Data + core API — Cosmos, domain types, pure rollup and block scoring | not started  |
+| 3   | Identity + invites                                                    | not started  |
+| 4   | Tree UI + permissions                                                 | not started  |
+| 5   | Coach agent                                                           | not started  |
+| 6   | Unattended coaching                                                   | not started  |
+| 7   | Observability + hardening                                             | not started  |
 
 Each phase begins with an agent-written brief under `docs/phase-<n>/`, is
 implemented by hand, and closes with a review gate.

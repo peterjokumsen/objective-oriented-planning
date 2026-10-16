@@ -51,10 +51,11 @@ jobs:
   teardown:
     name: Tear down environment
     runs-on: ubuntu-latest
-    # Must exceed teardown.sh --verify's ~40 min poll budget. A real teardown of
-    # rg-oop-dev took ~30 min for the Container Apps managed environment to drain;
-    # a timeout below that kills the job mid-verify and reports a false failure.
-    timeout-minutes: 60
+    # Must cover the worst case of both waits in teardown.sh: the destroy step
+    # waits up to ~20 min for the vault to soft-delete, then --verify waits up to
+    # ~40 min for the group to finish draining. 60 would land exactly on that
+    # ceiling and kill the job mid-verify.
+    timeout-minutes: 90
     # `azure` here is a GitHub Environment (protection rules + the OIDC federated
     # credential; see docs/CI_TEARDOWN.md) -- not to be confused with the
     # `environment_name` workflow *input*, which is the resource-group name suffix

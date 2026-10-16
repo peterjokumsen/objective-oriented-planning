@@ -154,6 +154,16 @@ run az group list --query '[].name' -o tsv
 # shared-RG delete below must still run. An earlier version exited 0 here, which
 # meant a scheduled run after a previous teardown silently skipped --shared.
 step "Deleting resource group $RG_NAME..."
+# Probe the vault BEFORE deleting the group. "Neither live nor soft-deleted"
+# after the delete is ambiguous: it can mean "already purged by an earlier run"
+# or "mid-transition, about to appear in list-deleted". What disambiguates it is
+# whether the vault was live when this run started -- if it was, it *must* appear
+# and we wait for it; if it was not, there is genuinely nothing to purge.
+VAULT_WAS_LIVE=0
+if vault_is_live "$VAULT_NAME"; then
+  VAULT_WAS_LIVE=1
+fi
+
 ENV_RG_EXISTS="$(group_exists "$RG_NAME")" || exit 1
 if [[ "$ENV_RG_EXISTS" == "true" ]]; then
   run az group delete --name "$RG_NAME" --yes --no-wait
@@ -165,17 +175,29 @@ fi
 # state and blocks a same-name redeploy. Opt-in via --purge-vault because the RG
 # delete is async and the vault may not have reached soft-deleted yet.
 #
-# Three states, not two: soft-deleted (purge it), live (wait for it to soft-delete
-# -- the RG delete is still draining), or neither (a repeat run after a purge --
-# skip rather than waiting 5 minutes for something that will never arrive).
+# Three states, not two: soft-deleted (purge it), live (wait for it to
+# soft-delete -- the RG delete is still draining), or neither.
+#
+# "Neither" is ambiguous and the distinction matters. On a *repeat* run after a
+# purge it means there is genuinely nothing to do, and skipping avoids waiting 20
+# minutes for a vault that will never arrive. Immediately after issuing an RG
+# delete it can mean the opposite: the vault is mid-transition, already gone from
+# the live list while `az keyvault list-deleted` has not caught up yet -- observed
+# as a 12-second window on the first nightly dispatch, which skipped the purge and
+# left the vault soft-deleted (blocking the next same-name deploy) until --verify
+# caught it. VAULT_WAS_LIVE (probed before the delete) is what separates them.
 if [[ "$PURGE_VAULT" == "1" ]]; then
-  if ! vault_is_soft_deleted "$VAULT_NAME" && ! vault_is_live "$VAULT_NAME"; then
-    info "Key Vault $VAULT_NAME not found (neither live nor soft-deleted); skipping purge."
+  if ! vault_is_soft_deleted "$VAULT_NAME" && ! vault_is_live "$VAULT_NAME" && [[ "$VAULT_WAS_LIVE" == "0" ]]; then
+    info "Key Vault $VAULT_NAME not found (neither live nor soft-deleted) and was not live when this run started; skipping purge."
   else
     if ! vault_is_soft_deleted "$VAULT_NAME"; then
-      step "Waiting for soft-deleted Key Vault $VAULT_NAME (up to ~5 min)..."
+      # The vault soft-deletes as part of the resource-group deletion, so this
+      # wait is bounded by how long the *group* takes to drain -- measured at
+      # ~16-30 min here, not the 5 min this originally allowed. A short budget
+      # would fail the destroy step on a teardown that is working.
+      step "Waiting for soft-deleted Key Vault $VAULT_NAME (up to ~20 min)..."
       attempt=1
-      max_attempts=30
+      max_attempts=120
       while ! vault_is_soft_deleted "$VAULT_NAME"; do
         if [[ "$attempt" -ge "$max_attempts" ]]; then
           # Loud, not a silent skip: an un-purged vault surfaces much later as a
