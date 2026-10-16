@@ -66,7 +66,10 @@ jobs:
       BASE_NAME: ${{ vars.BASE_NAME }}
       LOCATION: ${{ vars.LOCATION }}
       ENVIRONMENT: ${{ inputs.environment_name != '' && inputs.environment_name || vars.ENVIRONMENT }}
-      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      # scripts/common.sh requires SUBSCRIPTION_ID (the .env name), not the
+      # AZURE_-prefixed secret name. azure/login below reads the secret directly
+      # via the `with:` block, so it does not depend on this variable.
+      SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
     steps:
       - name: Check out repo
