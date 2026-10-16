@@ -115,14 +115,18 @@ jobs:
               rc=1
             fi
             echo "::endgroup::"
-          done < <(find infra \( -name '*.bicep' -o -name '*.bicepparam' \) | sort)
+          # .bicep only: `bicep build` rejects .bicepparam ("must use the .bicep
+          # extension"), even though `bicep format` accepts it. So the format
+          # check below covers both, and this one covers only templates.
+          done < <(find infra -name '*.bicep' | sort)
           exit "$rc"
 
       # Matches the bicep-format local hook in .pre-commit-config.yaml: Space
       # indent, size 2, final newline. Formats a copy of the whole tree so
       # module paths still resolve, then diffs, so a failure shows the exact
       # change instead of silently rewriting the repo. Covers .bicep and
-      # .bicepparam alike (keep the find patterns in sync with the hook).
+      # .bicepparam alike -- unlike `bicep build` above, `bicep format` accepts
+      # .bicepparam, so both are checked for formatting here.
       - name: Check bicep formatting
         run: |
           set -euo pipefail
