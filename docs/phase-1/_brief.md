@@ -1,10 +1,11 @@
 # Phase 1 Brief — Foundation
 
-> **Status: built and verified live (2026-10-15).**
+> **Status: complete and merged (PR #2, 2026-10-16).**
 >
-> All 11 steps (plus 8a) were implemented and deployed against the development
-> subscription. Steps 8, 8a and 9 carry corrections from what the live runs
-> revealed; read those before rebuilding. See `AGENTS.md` § Build mode.
+> All 11 steps (plus 8a) were implemented, deployed, torn down and redeployed
+> live, and every gate item in § 7 was observed. Steps 8, 8a and 9 carry
+> corrections from what the live runs revealed; read those before rebuilding. See
+> `AGENTS.md` § Build mode.
 >
 > One `step-x.md` per ordered step in this directory; each step file carries its
 > own instructions, stub shapes and verification checks.
@@ -161,9 +162,9 @@ Each step file carries its own checks. Run these locally before every push:
 - `pre-commit run --all-files` is CI's job; locally the hooks run on staged
   files at commit time.
 
-## 7. Review gate (demo before Phase 2)
+## 7. Review gate (demo before Phase 2) — PASSED
 
-Paste these back into chat:
+All seven observed (2026-10-16); see § 7a for what only a live run found.
 
 1. `az containerapp show` — FQDN — and the output of
    `curl -sSf https://<fqdn>/health`.
@@ -184,6 +185,21 @@ Paste these back into chat:
    build output.
 
 The agent sanity-checks these before issuing the Phase 2 brief.
+
+## 7a. What only a live run found
+
+Three defects were invisible to local checks and only appeared once CI and the
+nightly workflow actually ran. They are recorded because the pattern recurs:
+
+| Found by | Defect | Fix |
+| --- | --- | --- |
+| First live deploy | Misdiagnosed a lone revision as single-revision mode and added `revisionMode: 'Multiple'` — which **failed the whole deployment** (BCP037) | Reverted; revisions already work. Do not "fix" this again |
+| First teardown | `--verify` budgeted ~5 min; the managed environment takes ~30, so it reported a **false failure** | ~40 min poll, workflow `timeout-minutes: 60` |
+| **CI (PR #2)** | `bicep build` **rejects** `.bicepparam` ("must use the .bicep extension"), so extending the build loop broke the IaC job — while `bicep format` accepts it | Build loop stays `.bicep`; format check covers both |
+| **Nightly dispatch** | The workflow injected `AZURE_SUBSCRIPTION_ID` but `common.sh` requires `SUBSCRIPTION_ID`, so **every** run died at the pre-check | Inject the `.env` name; `azure/login` reads the secret via `with:` |
+
+The last two are the argument for both gates existing: the build-only checks
+passed locally, and only CI and a real dispatch found the rest.
 
 **Cost reminder.** The environment RG is destroyed between study sessions via
 `scripts/teardown.sh`; the nightly workflow does it when you forget. While
