@@ -147,6 +147,17 @@ right until exercised against Azure:
   delete it too, and `--purge-vault` to purge the soft-deleted vault that otherwise
   blocks the next same-name deploy (RG deletion is async, so nightly runs purge,
   local runs do not).
+- **Teardown waits are bounded by the slowest resource, and a short budget fails a
+  working teardown.** The managed environment takes ~16-30 min to drain, so
+  `teardown.sh` waits up to ~20 min for the vault to soft-delete and ~40 min for
+  the group to vanish, and the workflow allows 90 min. Do not shorten them.
+- **"Not found" is ambiguous right after an RG delete.** For ~12 s afterwards the
+  Key Vault is neither live nor soft-deleted. Skip the purge only when the vault
+  was **not live when the run started** (`VAULT_WAS_LIVE`, probed *before* the
+  delete) — not when "no group was deleted this run", which wrongly blocks the
+  skip on a re-run while the group is still draining. Getting this wrong either
+  leaves the vault soft-deleted (blocking the next deploy) or waits 20 min for a
+  vault that will never appear.
 - The nightly `.github/workflows/teardown.yml` is **cost-control infrastructure,
   not a development convenience.** Do not delete, disable or comment it out when a
   phase ends, a deploy breaks, or the project goes quiet. Its whole value is that

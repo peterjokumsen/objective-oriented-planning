@@ -215,7 +215,8 @@ re-pushing every image.
 | Role assignment created but binds to nothing         | You assigned the app (client) id instead of the service principal's object id                                                                          |
 | `Forbidden` on `az keyvault purge`                   | Add **Owner** at subscription scope (see 1.2)                                                                                                          |
 | Verify step: `still soft-deleted`                    | Purge raced the RG delete. Purge manually: `az keyvault purge --name kv-oop-dev`                                                                       |
-| Verify step: RG still exists                         | The managed environment is slow to drain — ~30 min measured. `--verify` polls for ~40 min and the job's `timeout-minutes` is 60; do not shorten either |
+| Verify step: RG still exists                         | The managed environment is slow to drain — ~16 min observed on the first real nightly run. `--verify` polls for ~40 min; do not shorten it |
+| Verify step: vault still soft-deleted                 | The destroy step skipped the purge because the vault was briefly neither live nor soft-deleted. Fixed in PR #5 (`VAULT_WAS_LIVE` guard). If it recurs, purge manually with the command printed |
 | Job silently did nothing                             | Nightly schedule disabled (60-day inactivity) or workflow disabled in the Actions tab                                                                  |
 | `BASE_NAME: parameter null` style script errors      | `scripts/common.sh` requires `BASE_NAME`/`LOCATION`/`SUBSCRIPTION_ID`; confirm the GitHub variables exist                                              |
 
