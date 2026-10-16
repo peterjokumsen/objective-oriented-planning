@@ -4,9 +4,10 @@ Declare one objective; AI decomposes it into a weighted tree you and your helper
 actually keep moving. Recurring work is a **bounded block**, not an open-ended
 habit.
 
-> **Status:** Phase 1 — Foundation. **In progress.** The brief lives in
-> [`docs/phase-1/`](docs/phase-1/_brief.md) and is being built by hand; there is
-> still no application code in the repo.
+> **Status:** Phase 1 — Foundation. **Complete** (merged in #2). The brief and
+> per-step notes live in [`docs/phase-1/`](docs/phase-1/_brief.md); `infra/`,
+> `api/` and `scripts/` exist and have been deployed, torn down and redeployed
+> live. Phase 2 (data + core API) has not started.
 
 ## What it is
 
@@ -50,7 +51,7 @@ phases.
 
 | #   | Phase                                                                 | State           |
 | --- | --------------------------------------------------------------------- | --------------- |
-| 1   | Foundation — Bicep, repo scaffold, teardown + nightly CI teardown     | **in progress** |
+| 1   | Foundation — Bicep, repo scaffold, teardown + nightly CI teardown     | **complete**    |
 | 2   | Data + core API — Cosmos, domain types, pure rollup and block scoring | not started     |
 | 3   | Identity + invites                                                    | not started     |
 | 4   | Tree UI + permissions                                                 | not started     |
