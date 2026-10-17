@@ -5,11 +5,17 @@
 # two flags it gained are --precheck and --verify, which the nightly workflow in
 # .github/workflows/teardown.yml needs: a cheap read-only pre-check so the common
 # case costs nothing, and a verification pass so a silent partial teardown cannot
-# leak cost unnoticed. Neither exists in the memorywell original.
+# leak cost unnoticed. Neither exists in the memorywell original. It also keeps
+# memorywell's VAULT_PURGE_WAIT_MINUTES knob (default 20 here, not memorywell's
+# 10: the wait is bounded by the managed environment drain, measured at 16-30
+# min) and reports drain progress through `check-state.sh --rg` rather than
+# counting attempts silently.
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # prepare environment variables
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
+source "$SCRIPT_DIR/common.sh"
 
 # Usage: teardown.sh [--purge-vault] [--shared] [--precheck] [--verify]
 #   --purge-vault  after deleting the RG, wait for the soft-deleted Key Vault to
@@ -44,8 +50,6 @@ for arg in "$@"; do
   esac
 done
 
-VAULT_NAME="kv-${BASE_NAME}-${ENVIRONMENT}"
-
 init_command_log "teardown"
 
 run az account set --subscription "$SUBSCRIPTION_ID"
@@ -57,7 +61,7 @@ run az account set --subscription "$SUBSCRIPTION_ID"
 if [[ "$PRECHECK" == "1" ]]; then
   rg_exists="$(group_exists "$RG_NAME")" || exit 1
   vault_deleted=false
-  if vault_is_soft_deleted "$VAULT_NAME"; then
+  if vault_is_soft_deleted; then
     vault_deleted=true
   fi
 
@@ -100,28 +104,69 @@ if [[ "$VERIFY" == "1" ]]; then
   # fails the nightly job on a teardown that is in fact succeeding, which is the
   # failure mode this check exists to avoid. Keep the workflow's timeout-minutes
   # in step with this.
-  step "Verifying resource group $RG_NAME is gone..."
+  #
+  # RG_VERIFY_WAIT_MINUTES is the one knob: the nightly workflow leaves it at the
+  # ~40 min default, a local run can shorten it to get an answer faster.
+  verify_wait_minutes="${RG_VERIFY_WAIT_MINUTES:-40}"
+  poll_seconds=10
+  report_minutes="${RG_REPORT_INTERVAL_MINUTES:-10}"
+  max_attempts=$((verify_wait_minutes * 60 / poll_seconds))
+  report_every=$((report_minutes * 60 / poll_seconds))
+  [[ "$report_every" -ge 1 ]] || report_every=1
+  [[ "$max_attempts" -ge 1 ]] || max_attempts=1
+
+  # report_drain: hand the group's current state to `check-state.sh --rg`, which
+  # prints the provisioning state and every resource's state. Progress reporting
+  # only -- the poll below decides when the group is gone, so a report that cannot
+  # be produced (usage error, a broken script, a flaky API) is a warning, never a
+  # failed run. `set -e` does not fire inside an `if`, so a non-zero verdict is
+  # expected here and must be read, not propagated.
+  report_drain() {
+    local rc=0
+    echo "--- state of $RG_NAME ---" >&2
+    "${SCRIPT_DIR}/check-state.sh" --rg "$RG_NAME" || rc=$?
+    case "$rc" in
+      0) info "  $RG_NAME is gone." ;;
+      1) warn "  still draining: some resources are not Succeeded." ;;
+      2) info "  group exists, everything Succeeded (delete still propagating)." ;;
+      *) warn "  check-state.sh --rg exited $rc; no state report this time." ;;
+    esac
+  }
+
+  step "Verifying resource group $RG_NAME is gone (up to ~${verify_wait_minutes} min)..."
+  group "Waiting for $RG_NAME to be deleted"
   attempt=1
-  max_attempts=240 # ~40 min at 10s
+  next_report=1
   while [[ "$attempt" -le "$max_attempts" ]]; do
-    RG_STILL_EXISTS="$(group_exists "$RG_NAME")" || { status=1; break; }
+    RG_STILL_EXISTS="$(group_exists "$RG_NAME")" || {
+      endgroup
+      status=1
+      break
+    }
     if [[ "$RG_STILL_EXISTS" != "true" ]]; then
       success "Resource group $RG_NAME is gone."
       break
     fi
+    if (( attempt >= next_report )); then
+      report_drain
+      next_report=$((attempt + report_every))
+    fi
     if [[ "$attempt" -eq "$max_attempts" ]]; then
-      error "Resource group $RG_NAME still exists after ~40 min."
+      error "Resource group $RG_NAME still exists after ~${verify_wait_minutes} min."
       status=1
       break
     fi
-    warn "Attempt $attempt/$max_attempts: $RG_NAME still exists, retrying in 10s..."
-    sleep 10
+    if (( attempt % 6 == 0 )); then
+      warn "Attempt $attempt/$max_attempts: $RG_NAME still exists, retrying in ${poll_seconds}s..."
+    fi
+    sleep "$poll_seconds"
     attempt=$((attempt + 1))
   done
+  endgroup
 
   # An un-purged soft-deleted vault blocks the next same-name deploy, so a
   # leftover one fails loudly rather than becoming a confusing deploy error later.
-  if vault_is_soft_deleted "$VAULT_NAME"; then
+  if vault_is_soft_deleted; then
     error "Key Vault $VAULT_NAME is still soft-deleted; purge it manually:"
     error "  az keyvault purge --name \"$VAULT_NAME\""
     status=1
@@ -160,7 +205,7 @@ step "Deleting resource group $RG_NAME..."
 # whether the vault was live when this run started -- if it was, it *must* appear
 # and we wait for it; if it was not, there is genuinely nothing to purge.
 VAULT_WAS_LIVE=0
-if vault_is_live "$VAULT_NAME"; then
+if vault_is_live; then
   VAULT_WAS_LIVE=1
 fi
 
@@ -187,19 +232,29 @@ fi
 # left the vault soft-deleted (blocking the next same-name deploy) until --verify
 # caught it. VAULT_WAS_LIVE (probed before the delete) is what separates them.
 if [[ "$PURGE_VAULT" == "1" ]]; then
-  if ! vault_is_soft_deleted "$VAULT_NAME" && ! vault_is_live "$VAULT_NAME" && [[ "$VAULT_WAS_LIVE" == "0" ]]; then
+  if ! vault_is_soft_deleted && ! vault_is_live && [[ "$VAULT_WAS_LIVE" == "0" ]]; then
     info "Key Vault $VAULT_NAME not found (neither live nor soft-deleted) and was not live when this run started; skipping purge."
   else
-    if ! vault_is_soft_deleted "$VAULT_NAME"; then
+    if ! vault_is_soft_deleted; then
       # The vault soft-deletes as part of the resource-group deletion, so this
       # wait is bounded by how long the *group* takes to drain -- measured at
       # ~16-30 min here, not the 5 min this originally allowed. A short budget
       # would fail the destroy step on a teardown that is working.
-      step "Waiting for soft-deleted Key Vault $VAULT_NAME (up to ~20 min)..."
+      # VAULT_PURGE_WAIT_MINUTES caps it (default 20). The nightly workflow may
+      # lower it so this step cannot eat the job's timeout budget -- --verify
+      # already owns the long wait.
+      purge_wait_minutes="${VAULT_PURGE_WAIT_MINUTES:-20}"
+      max_attempts=$((purge_wait_minutes * 60 / 10))
+      [[ "$max_attempts" -ge 1 ]] || max_attempts=1
+      step "Waiting for soft-deleted Key Vault $VAULT_NAME (up to ~${purge_wait_minutes} min)..."
+      # Grouped so the probe loop collapses into one section in the nightly
+      # GitHub Actions log. Close it on every path: an unclosed group swallows
+      # the rest of the step's output. Never group around a $(...) capture.
+      group "Waiting for $VAULT_NAME to become soft-deleted"
       attempt=1
-      max_attempts=120
-      while ! vault_is_soft_deleted "$VAULT_NAME"; do
+      while ! vault_is_soft_deleted; do
         if [[ "$attempt" -ge "$max_attempts" ]]; then
+          endgroup
           # Loud, not a silent skip: an un-purged vault surfaces much later as a
           # deploy that fails for no visible reason.
           error "Vault $VAULT_NAME not soft-deleted yet; purge skipped. Retry later:"
@@ -211,6 +266,7 @@ if [[ "$PURGE_VAULT" == "1" ]]; then
         sleep 10
         attempt=$((attempt + 1))
       done
+      endgroup
     fi
     step "Purging soft-deleted Key Vault $VAULT_NAME..."
     run az keyvault purge --name "$VAULT_NAME"

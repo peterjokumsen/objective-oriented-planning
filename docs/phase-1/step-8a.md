@@ -17,10 +17,13 @@ two-phase log you can read top to bottom, not correctness.
 
 ## `scripts/check-state.sh`
 
-Read-only. Per resource group it prints the group's `provisioningState`, then one
-`name: state` line per resource, then the latest three group-scope deployments;
-afterwards it does the same for subscription-scope deployments filtered to this
-project's `oop-dev-` / `oop-shared-` prefixes.
+Read-only. It runs every probe first (each `step`/`+` line goes to stderr), then
+prints one consolidated report: per resource group the group's `provisioningState`,
+then one `name: state` line per resource, then the latest three group-scope
+deployments; afterwards it does the same for subscription-scope deployments
+filtered to this project's `oop-dev-` / `oop-shared-` prefixes. Lines are
+colour-coded by state locally and turned into GitHub Actions annotations in CI
+(`scripts/_log.sh` picks the backend).
 
 **Exits 0 only when everything is Succeeded** (or nothing is deployed yet), and 1
 otherwise — that is the point. A resource list that _looks_ fine is not the same
@@ -30,6 +33,15 @@ still look healthy.
 
 `--env-only` / `--shared-only` limit it to one side, which is what you want
 mid-sequence (after `deploy-shared.sh`, before `deploy.sh`).
+
+`--rg <name>` is a fourth mode, added when `teardown.sh --verify` grew progress
+reporting: it reports a single resource group — its provisioning state and its
+resources' states, nothing else — with no command traces and no log files, and
+answers in its **exit code** so a caller need not parse the report: **0** absent,
+**1** present but something is not Succeeded, **2** present and everything
+Succeeded. `teardown.sh --verify` prints that verdict every 10 minutes while it
+waits for the group to drain. A usage error exits **64**, which collides with
+none of them.
 
 Two things to know about the output, both verified rather than assumed:
 
@@ -47,7 +59,10 @@ Two things to know about the output, both verified rather than assumed:
 - `./scripts/check-state.sh` exits 0 and reports "everything Succeeded" against
   the deployed environment.
 - `./scripts/check-state.sh --shared-only` and `--env-only` each check one side.
-- `./scripts/check-state.sh --bogus` exits **2** with usage (distinct from the
+- `./scripts/check-state.sh --rg rg-oop-dev` exits **2** against a deployed
+  environment, `--rg rg-oop-nonexistent` exits **0**, and `--rg` with no name
+  exits **64**.
+- `./scripts/check-state.sh --bogus` exits **64** with usage (distinct from the
   other scripts' 1 — a bad flag here is not a failed check).
 - `VAL=$(run az account show ... -o tsv)` captures **only** the command's output.
   Both `run` and `init_command_log` log to stderr for exactly this reason; if you

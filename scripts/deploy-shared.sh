@@ -49,9 +49,10 @@ else
   SHARED_RG_STATE="absent"
 fi
 
+step "Starting $ACTION for $SHARED_RG_NAME"
 log_vars \
   "Action=$ACTION" \
-  "Subscription=$SUBSCRIPTION_ID" \
+  "Subscription=$(subscription_name) ($SUBSCRIPTION_ID)" \
   "Shared resource group=$SHARED_RG_NAME" \
   "RG state=$SHARED_RG_STATE" \
   "Registry=$SHARED_ACR_NAME" \
@@ -98,6 +99,8 @@ while true; do
 done
 
 # Polled: outputs can lag the Succeeded state (see fetch_deployment_outputs).
+# Three fields, not two: this stack also shares an App Configuration store, and
+# dropping the third column would silently shift every value left.
 SHARED_OUTPUTS="$(fetch_deployment_outputs "$SHARED_DEPLOYMENT_NAME" \
   "[properties.outputs.registryName.value, properties.outputs.loginServer.value, properties.outputs.appConfigStoreName.value]" 3)" || exit 1
 IFS=$'\t' read -r SHARED_REGISTRY SHARED_LOGIN_SERVER APP_CONFIG_STORE <<< "$SHARED_OUTPUTS" || true

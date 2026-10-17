@@ -43,7 +43,11 @@ steps whose comments name three invocations: `teardown.sh --precheck`,
 - **`--verify`** — re-checks that `rg-oop-<env>` is gone and `kv-oop-dev` is
   not soft-deleted, and exits non-zero if either still holds. A silent partial
   teardown is the failure worth catching, because the cost it leaks is invisible
-  until the next billing statement.
+  until the next billing statement. While it waits it prints what is left
+  draining, by calling `./scripts/check-state.sh --rg` every
+  `RG_REPORT_INTERVAL_MINUTES` (default 10); that call is progress reporting
+  only, so its non-zero verdicts are read, never propagated. Set
+  `RG_VERIFY_WAIT_MINUTES` to shorten the budget locally.
 
 Both are safe to run on their own, which also makes them locally testable
 without deploying anything.
@@ -73,6 +77,12 @@ without deploying anything.
   exceed it: a shorter budget reports a false failure on a teardown that is
   succeeding, which is worse than a slow check. Do not shorten either.
 - **Deploy from an absent RG with `./scripts/deploy.sh`.** This is the real
-  proof: if the vault were still soft-deleted, this fails.
+  proof: if the vault were still soft-deleted, this fails — and it now says so
+  explicitly, with the `az keyvault purge` / `recover` commands, before the Bicep
+  deployment can fail partway through with an opaque "name already in use".
+- The destroy step's vault wait is capped by `VAULT_PURGE_WAIT_MINUTES` (local
+  default 20, set to 5 by the nightly workflow so it cannot eat the job's
+  `timeout-minutes` budget — `--verify` owns the long wait). A wait that times
+  out is a loud failure naming the manual purge, never a silent skip.
 - After teardown, `az group list --query '[].name' -o tsv` shows
   `rg-oop-shared` and no `rg-oop-dev`.

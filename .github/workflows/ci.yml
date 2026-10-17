@@ -102,31 +102,27 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           bicep --version
 
+      # The build itself lives in scripts/validate-bicep.sh, so local and CI
+      # validate identically: it compiles every infra/**/*.bicep AND
+      # *.bicepparam (which this inline loop previously skipped, because
+      # `bicep build` rejects .bicepparam) with `--stdout`, so no .json lands
+      # next to the sources, and fails with one annotation per bad file.
+      #
+      # BICEP_MODE=bicep is deliberate: the script prefers `az bicep`, and
+      # GitHub-hosted runners *do* have `az` -- but its bundled Bicep version
+      # moves under us, while the version pinned above is what the local
+      # bicep-format hook is kept in step with. Pin it here; the format check
+      # below uses the same binary.
       - name: Build every bicep file
-        run: |
-          set -euo pipefail
-          rc=0
-          while IFS= read -r file; do
-            echo "::group::bicep build $file"
-            if bicep build "$file" --stdout >/dev/null; then
-              echo "ok"
-            else
-              echo "::error::bicep build failed for $file"
-              rc=1
-            fi
-            echo "::endgroup::"
-          # .bicep only: `bicep build` rejects .bicepparam ("must use the .bicep
-          # extension"), even though `bicep format` accepts it. So the format
-          # check below covers both, and this one covers only templates.
-          done < <(find infra -name '*.bicep' | sort)
-          exit "$rc"
+        env:
+          BICEP_MODE: bicep
+        run: ./scripts/validate-bicep.sh
 
       # Matches the bicep-format local hook in .pre-commit-config.yaml: Space
       # indent, size 2, final newline. Formats a copy of the whole tree so
       # module paths still resolve, then diffs, so a failure shows the exact
       # change instead of silently rewriting the repo. Covers .bicep and
-      # .bicepparam alike -- unlike `bicep build` above, `bicep format` accepts
-      # .bicepparam, so both are checked for formatting here.
+      # .bicepparam alike (keep the find patterns in sync with the hook).
       - name: Check bicep formatting
         run: |
           set -euo pipefail
@@ -156,11 +152,26 @@ jobs:
             echo "::endgroup::"
           done < <(find scripts -name '*.sh' | sort)
 
-      # A gate, not advice. common.sh splits `export X="$(...)"` into a
-      # separate assignment (SC2155 masks a failed command's exit status) and
-      # carries a shebang plus a sourced-file guard (SC2148), so no exclusions
-      # are needed.
+      # A gate, not advice. common.sh and the `_`-prefixed helpers are sourced
+      # rather than run, so they declare `# shellcheck shell=bash` instead of
+      # carrying a shebang. The scripts that do run split `export X="$(...)"`
+      # into a separate assignment (SC2155 masks a failed command's exit
+      # status). No exclusions either way.
       - name: shellcheck
         run: |
           set -euo pipefail
           shellcheck --severity=warning scripts/*.sh
+
+      # scripts/_log.sh picks one of two interchangeable logging backends at
+      # source time. A printer that exists in only one of them type-checks fine
+      # and then blows up at run time on the other platform, so the two
+      # `name() {` definition lists must stay identical. Private helpers
+      # (_gh_*) are deliberately excluded: they are backend-internal.
+      - name: Logging backends define the same functions
+        run: |
+          set -euo pipefail
+          fns() { grep -oE '^[a-z][a-z0-9_]*\(\)' "$1" | sort -u; }
+          if ! diff <(fns scripts/_log-local.sh) <(fns scripts/_log-ghactions.sh); then
+            echo "::error::scripts/_log-local.sh and scripts/_log-ghactions.sh define different functions."
+            exit 1
+          fi
