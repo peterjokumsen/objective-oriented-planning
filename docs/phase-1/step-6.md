@@ -3,17 +3,22 @@
 Ported from `~/repos/memorywell/scripts/common.sh` per `AGENTS.md` § Repo rules
 — reviewed against the current version, not copied blind. Every resource name
 changes from the `memwell` prefix to `oop`; the shape is otherwise what the
-deploy and teardown scripts in this repo depend on.
+deploy and teardown scripts in this repo depend on. Since the original port it
+also shrank: the logging backends and the `az` probes moved into `scripts/_log.sh`
+and `scripts/_azure.sh`, so this file is only configuration and naming.
 
 It has four jobs: load `.env`, compute names, mint a unique deployment name, and
-provide output helpers.
+source those two helpers.
 
 ## Sourced, not executed
 
 `common.sh` has **no shebang** and is never run directly — it is sourced by
-`deploy.sh`, `deploy-shared.sh` and `teardown.sh`. That is why CI currently runs
-shellcheck with `--exclude=SC2148` ("shebang is missing") and
-`continue-on-error`. Step 11 cleans both up; until then they are expected.
+`deploy.sh`, `deploy-all.sh`, `deploy-shared.sh`, `teardown.sh` and
+`check-state.sh`. It declares `# shellcheck shell=bash` as the first line, which
+is how it satisfies the `shellcheck --severity=warning` gate with no exclusions
+and no `continue-on-error`. (It briefly carried a shebang and a sourced-file
+guard instead; the guard was noise once shellcheck ran clean, and the split into
+`_`-prefixed helpers settled the shape.)
 
 ## Naming
 
@@ -91,7 +96,9 @@ only `deployment_name` should create one.
 ## The `run` family
 
 Every `az`/`curl` call goes through one of three wrappers, which log the command
-to `logs/<script>-<timestamp>.log` as `+ az ...`:
+to `logs/<script>-<timestamp>_commands.log` as `+ az ...` (with stdout and stderr
+also teed into their own `_stdout` / `_stderr` files, so a probe's hidden stderr
+and a `$(...)` capture's output are recoverable after the console scrolled past):
 
 | Wrapper           | Use for                                                           |
 | ----------------- | ----------------------------------------------------------------- |
@@ -102,20 +109,24 @@ to `logs/<script>-<timestamp>.log` as `+ az ...`:
 **Never append `2>/dev/null` to `run`.** That redirects `run` itself and swallows
 the trace along with it, losing the record you wanted. Use `run_hide_stderr`.
 
-Also in `common.sh`: `subscription_name()` (explicit `--subscription`, so it never
-depends on ambient context), `fetch_deployment_outputs` (polls ARM outputs until
-populated), and the `group_exists` / `vault_is_live` / `vault_is_soft_deleted`
-probes — which exit non-zero when `az` itself fails, so an outage is never
-mistaken for absence.
+The wrappers and the message printers live in `scripts/_log.sh` (which picks
+`_log-local.sh` for a TTY or `_log-ghactions.sh` under Actions, so CI gets
+`::notice::`/`::warning::`/`::error::` annotations and collapsible groups instead
+of colour). `common.sh` keeps only the `az` helpers: `subscription_name()`
+(explicit `--subscription`, so it never depends on ambient context, and cached in
+a file because every caller uses it inside a `$(...)` capture),
+`fetch_deployment_outputs` (polls ARM outputs until populated), and the
+`group_exists` / `vault_is_live` / `vault_is_soft_deleted` probes — which exit
+non-zero when `az` itself fails, so an outage is never mistaken for absence.
 
 ## Verify
 
-- `bash -n scripts/common.sh` clean.
-- `. .env && source scripts/common.sh && echo "$RG_NAME $SHARED_RG_NAME $SHARED_ACR_NAME"`
-  prints `rg-oop-dev rg-oop-shared acroop`.
+- `bash -n scripts/common.sh scripts/_log.sh scripts/_azure.sh` clean.
+- `. .env && source scripts/common.sh && echo "$RG_NAME $SHARED_RG_NAME $SHARED_ACR_NAME $VAULT_NAME"`
+  prints `rg-oop-dev rg-oop-shared acroop kv-oop-dev`.
 - `source scripts/common.sh` in a shell with no `.env` and no `BASE_NAME` exits
   with the `:?` message — the guard works.
-- With `.env` present, it prints `Loaded .env`.
+- With `.env` present, it prints `debug: Loaded .env`.
 - `DEPLOYMENT_NAME` matches `<base>-<env>-<14 digits>`, and `IMAGE_TAG` is
   `dev-<those digits>`. Run twice: the second run gets a **different** name.
 - `REUSE_DEPLOYMENT=1` on a second call reuses the recorded name.

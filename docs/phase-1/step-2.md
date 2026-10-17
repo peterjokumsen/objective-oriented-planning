@@ -66,6 +66,9 @@ inputs.global.environment == 'prod' ? true : null`. Purge protection on the dev
 --file "$f" --stdout >/dev/null || echo "FAILED $f"; done` prints nothing.
   (A module that imports `_types.bicep` will emit a warning about an unused
   param — a warning is fine, an error is not.)
+- `./scripts/validate-bicep.sh` compiles the whole `infra/` tree — `*.bicep` and
+  `*.bicepparam` — and reports `Failed=0`. It is what CI runs (`BICEP_MODE=bicep`
+  there), so this is the same check the merge gate makes.
 - `az bicep format --indent-kind Space --indent-size 2 --insert-final-newline
 --file <each file>` leaves the files unchanged. The pre-commit hook enforces
   this, so let it run rather than eyeballing it.

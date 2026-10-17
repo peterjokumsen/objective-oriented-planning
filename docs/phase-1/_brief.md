@@ -126,11 +126,17 @@ api/Dockerfile                     # python:3.11-slim, non-root, EXPOSE 8000
 api/.dockerignore                  # keep tests and caches out of the build context
 api/tests/test_main.py             # /health and /ready assertions via TestClient
 
-scripts/common.sh                  # .env loader, RG/ACR naming, DEPLOYMENT_NAME + IMAGE_TAG,
-                                   #   colour helpers, log_vars, subscription_name,
-                                   #   init_command_log/log_cmd/run
+scripts/common.sh                  # .env loader, RG/ACR/vault naming, DEPLOYMENT_NAME +
+                                   #   IMAGE_TAG; sources the two `_` helpers below
+scripts/_log.sh                    # logging backends (_log-local/_log-ghactions),
+                                   #   log_vars, init_command_log/log_cmd/run
+scripts/_azure.sh                  # subscription_name, group_exists, vault_* probes,
+                                   #   fetch_deployment_outputs
+scripts/validate-bicep.sh          # compiles infra/**/*.bicep + *.bicepparam
+                                   #   with --stdout into build/bicep
 scripts/deploy-all.sh              # shared then environment; action passed through
-scripts/check-state.sh             # read-only provisioning check; exits 0/1
+scripts/check-state.sh             # read-only provisioning check; exits 0/1, or
+                                   #   0/1/2 for --rg <name>
 scripts/deploy-shared.sh           # sub deploy of shared.bicep; create|what-if;
                                    #   polls the deployment state until Succeeded
 scripts/deploy.sh                  # sub deploy, acr build, containerapp update, /health

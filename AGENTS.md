@@ -16,7 +16,9 @@ was built. `web/` does not exist yet; theming lands with it in Phase 4.
 `.github/workflows/teardown.yml` is **armed**: every step delegates to
 `scripts/teardown.sh` (`--precheck` → `--purge-vault` → `--verify`) and no
 `az group delete` is inlined, because the script holds the pre-check, the
-ordering and the verification. It still deletes nothing until its OIDC setup is
+ordering and the verification. `--verify` reports what is left draining via
+`scripts/check-state.sh --rg` instead of counting attempts silently. It still
+deletes nothing until its OIDC setup is
 done — see `docs/CI_TEARDOWN.md` § 1–2 for the app registration, RBAC,
 federated credential and GitHub environment. Until that is configured, a nightly
 run fails at `azure/login`, and that is the safe failure.
@@ -51,11 +53,14 @@ no gate.
   first when using another project's scripts.
 - Every `az` / `curl` call in `scripts/` goes through `run`, `run_hide_stderr`
   or `run_quiet`, which echo `+ <cmd>` to **stderr** and append it to
-  `logs/<name>-<ts>.log`. Keep it that way: the stderr split is what lets
+  `logs/<name>-<ts>_commands.log` (with stdout and stderr teed into their own
+  `_stdout` / `_stderr` files). Keep it that way: the stderr split is what lets
   `X=$(run az ...)` capture only the command's output. Moving either `run` or
   `init_command_log` to stdout silently corrupts every `$(...)` capture. And
   never append `2>/dev/null` to `run` — that redirects `run` itself and swallows
-  the trace; use `run_hide_stderr`. `logs/` is git-ignored.
+  the trace; use `run_hide_stderr`. `logs/` is git-ignored. The nightly workflow
+  uploads `logs/` as an artifact, which is the only way to read back the output
+  a `$(...)` capture consumed or a probe's hidden stderr.
 - **Deployment names are minted lazily** (`deployment_name`, `image_tag`), never
   at source time. Keep it that way: `deploy-all.sh` and `teardown.sh --precheck`
   source `common.sh` but never deploy, so an eager name would overwrite
@@ -69,15 +74,22 @@ no gate.
   subscription across contexts, so an unqualified `az group show` can report a
   group "not found" in one shell and `Succeeded` in the next, sending you chasing
   a phantom bug. Pass `--subscription` explicitly when verifying.
-- Bicep: `az bicep build --file infra/main.bicep --stdout`, and format check via
-  `az bicep format --indent-kind Space --indent-size 2 --insert-final-newline
---file <f>`.
+- Bicep: `./scripts/validate-bicep.sh` (compiles every `infra/**/*.bicep` **and**
+  `*.bicepparam` with `--stdout`, so no `.json` lands next to the sources — `build/`
+  is git-ignored). Format check via `az bicep format --indent-kind Space
+--indent-size 2 --insert-final-newline --file <f>`; CI diffs a formatted copy,
+  so it fails on drift rather than rewriting files.
 - Shell: `bash -n scripts/*.sh` and `shellcheck --severity=warning scripts/*.sh`.
 - `shellcheck` is a **real gate** in CI — no `--exclude` and no
-  `continue-on-error`. `common.sh` splits `export X="$(...)"` into a separate
-  assignment (SC2155 masks a failed command's exit status) and carries a shebang
-  plus a sourced-file guard (SC2148). Do not reintroduce either exemption: an
-  exclusion that exists to survive new code is an exclusion nobody reviews.
+  `continue-on-error`. The `_`-prefixed helpers (`common.sh`, `_log.sh`,
+  `_azure.sh`) are sourced rather than run, so they declare
+  `# shellcheck shell=bash` instead of carrying a shebang and a sourced-file
+  guard; the scripts that _are_ run split `export X="$(...)"` into a separate
+  assignment (SC2155 masks a failed command's exit status). Do not reintroduce
+  either exemption: an exclusion that exists to survive new code is an exclusion
+  nobody reviews. CI also gates that `_log-local.sh` and `_log-ghactions.sh`
+  define the same function names — a printer present in only one backend
+  type-checks fine and then fails at run time on the other platform.
 - `BICEP_VERSION` (currently `v0.48.1`) in `ci.yml` must be kept in step with the
   `az bicep` version installed locally, or formatting differs between the hook and
   CI's diff.
@@ -124,7 +136,9 @@ right until exercised against Azure:
   changing anything.
 - **A teardown takes ~30 minutes**, almost entirely the Container Apps managed
   environment draining. `teardown.sh --verify` polls ~40 min and the workflow's
-  `timeout-minutes` is 60 for that reason. Do not shorten either: a false
+  `timeout-minutes` is 90 for that reason. The destroy step caps its own vault
+  wait with `VAULT_PURGE_WAIT_MINUTES` (local default 20; the workflow sets 5 so
+  it cannot eat the job budget). Do not shorten the verify poll: a false
   "still exists" fails the nightly job on a teardown that is succeeding.
 
 ## Repo rules

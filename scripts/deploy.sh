@@ -98,13 +98,30 @@ else
 fi
 export IMAGE
 
+# A soft-deleted vault reserves its name for ~90 days, so the Bicep deployment
+# below would fail partway through with an opaque "name already in use". Catch it
+# here, where the fix can be spelled out.
+step "Checking if key vault is soft-deleted..."
+if vault_is_soft_deleted; then
+  error "Key Vault $VAULT_NAME is soft-deleted (name reserved, ~90 days)."
+  error "Purge it (fresh vault, study-stack default):"
+  error "  az keyvault purge --name \"$VAULT_NAME\" --location \"$LOCATION\""
+  error "Or restore it with its old secrets:"
+  error "  az keyvault recover --name \"$VAULT_NAME\" --location \"$LOCATION\""
+  exit 1
+else
+  success "Key Vault $VAULT_NAME is not soft-deleted."
+fi
+
 # Deploy the Bicep template to create the resource group and other resources
+step "Starting $ACTION for $RG_NAME"
 log_vars \
   "Action=$ACTION" \
-  "Subscription=$SUBSCRIPTION_ID" \
+  "Subscription=$(subscription_name) ($SUBSCRIPTION_ID)" \
   "Resource group=$RG_NAME" \
-  "RG state=$RG_STATE" \
+  "RG state=${RG_STATE:-absent}" \
   "Shared resource group=$SHARED_RG_NAME" \
+  "KeyVault=$VAULT_NAME" \
   "Location=$LOCATION" \
   "Deployment=$DEPLOYMENT_NAME" \
   "ImageTag=$IMAGE_TAG" \
