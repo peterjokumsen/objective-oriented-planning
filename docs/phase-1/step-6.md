@@ -111,13 +111,31 @@ the trace along with it, losing the record you wanted. Use `run_hide_stderr`.
 
 The wrappers and the message printers live in `scripts/_log.sh` (which picks
 `_log-local.sh` for a TTY or `_log-ghactions.sh` under Actions, so CI gets
-`::notice::`/`::warning::`/`::error::` annotations and collapsible groups instead
-of colour). `common.sh` keeps only the `az` helpers: `subscription_name()`
+`::warning::`/`::error::` annotations, `##` headings and `<details>` blocks on
+the run summary, and collapsible groups instead of colour). Under Actions
+nothing is an annotation unless something went wrong: `step` becomes a summary
+heading, `success`/`info` bullets, `warn`/`error` the annotations. `summary
+<markdown>` appends a block verbatim to `$GITHUB_STEP_SUMMARY` (the run summary
+page, which is what a human reads first) and echoes it locally.
+
+`scripts/check-logging.sh` drives every printer and every `run*` wrapper through
+both backends offline — no `az`, no `.env` — and asserts where each message
+lands: the console streams, the three log files, and the summary. It runs in CI
+because every one of those splits is easy to break silently, and none of them
+shows up anywhere else until a failed run needs reading.
+
+`common.sh` keeps only the `az` helpers: `subscription_name()`
 (explicit `--subscription`, so it never depends on ambient context, and cached in
 a file because every caller uses it inside a `$(...)` capture),
 `fetch_deployment_outputs` (polls ARM outputs until populated), and the
 `group_exists` / `vault_is_live` / `vault_is_soft_deleted` probes — which exit
-non-zero when `az` itself fails, so an outage is never mistaken for absence.
+non-zero when `az` itself fails, so an outage is never mistaken for absence — plus
+`run_deployment`, which backgrounds a Bicep subscription deployment and
+heartbeats `provisioningState` while it runs. `az deployment sub create` prints
+nothing until ARM returns (minutes, for the managed environment), so `run` alone
+leaves the log frozen on one trace line; `run_deployment` reports elapsed time
+and ARM's state every `DEPLOY_POLL_SECONDS` (default 30) and flushes the command's
+output at the end without dropping it.
 
 ## Verify
 

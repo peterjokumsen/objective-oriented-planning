@@ -35,8 +35,9 @@ no gate.
   touch staged files. Never `pre-commit run --all-files` except for a deliberate
   baseline — CI does that.
 - `.github/workflows/ci.yml` is the merge gate (pre-commit, `pytest`,
-  `bicep build` + format diff, `bash -n`, shellcheck). Every PR into `main` must
-  be green; fix locally first.
+  `bicep build` + format diff, `bash -n`, shellcheck,
+  `./scripts/check-logging.sh`). Every PR into `main` must be green; fix locally
+  first.
 
 ### Verifying before you push
 
@@ -61,6 +62,12 @@ no gate.
   the trace; use `run_hide_stderr`. `logs/` is git-ignored. The nightly workflow
   uploads `logs/` as an artifact, which is the only way to read back the output
   a `$(...)` capture consumed or a probe's hidden stderr.
+- **A long `az deployment sub create` must go through `run_deployment`, not
+  `run`.** ARM prints nothing until the deployment returns — minutes for the
+  managed environment — so a plain `run` leaves the log frozen on one `+ az
+deployment sub create …` trace and the first sign of anything arrives all at
+  once at the end. `run_deployment` heartbeats every `DEPLOY_POLL_SECONDS`
+  (default 30) and defers the streams to the end without dropping them.
 - **Deployment names are minted lazily** (`deployment_name`, `image_tag`), never
   at source time. Keep it that way: `deploy-all.sh` and `teardown.sh --precheck`
   source `common.sh` but never deploy, so an eager name would overwrite
@@ -89,7 +96,17 @@ no gate.
   either exemption: an exclusion that exists to survive new code is an exclusion
   nobody reviews. CI also gates that `_log-local.sh` and `_log-ghactions.sh`
   define the same function names — a printer present in only one backend
-  type-checks fine and then fails at run time on the other platform.
+  type-checks fine and then fails at run time on the other platform — and runs
+  `./scripts/check-logging.sh`, which drives every printer through both backends
+  and asserts where each message lands: the console streams, the three log files,
+  and the workflow run summary.
+- **`step`, `success` and `group` are load-bearing, not cosmetic.** Under the
+  GitHub backend `step` is a `## heading` in the run summary, `success`/`info`
+  are bullets, and `group`/`endgroup` are a `<details>` block. So `endgroup` must
+  close every `group` — an unbalanced one swallows the rest of the summary — and
+  must never wrap a `$(...)` capture. `summary <markdown>` writes a block
+  verbatim to `$GITHUB_STEP_SUMMARY` and echoes it locally; use it for the
+  verdict a human reads first (teardown's is a table), not for per-step narration.
 - `BICEP_VERSION` (currently `v0.48.1`) in `ci.yml` must be kept in step with the
   `az bicep` version installed locally, or formatting differs between the hook and
   CI's diff.

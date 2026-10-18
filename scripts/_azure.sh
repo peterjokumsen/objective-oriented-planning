@@ -99,6 +99,118 @@ fetch_deployment_outputs() {
   done
 }
 
+# _elapsed_label <seconds>: "45s" or "7m30s". Minutes alone read as "~0 min" for
+# the first heartbeat of a quick deployment, which looks like a bug.
+_elapsed_label() {
+  local total="$1"
+  if ((total < 60)); then
+    printf '%ds' "$total"
+  elif ((total % 60 == 0)); then
+    printf '%dm' "$((total / 60))"
+  else
+    printf '%dm%ds' "$((total / 60))" "$((total % 60))"
+  fi
+}
+
+# run_deployment <deployment-name> <az deployment sub args...>: runs a Bicep
+# subscription deployment while keeping the log alive.
+#
+# `az deployment sub create` prints absolutely nothing until ARM returns — a
+# managed environment alone takes many minutes — so a plain `run` leaves the log
+# frozen at the `+ az deployment sub create …` trace for the whole deployment,
+# and the first sign of anything (success or failure) arrives all at once at the
+# end. This backgrounds the call and polls `deployment sub show` instead, so
+# every DEPLOY_POLL_SECONDS (default 30) the log says the deployment is still
+# going and what state ARM reports, while the exit status propagates exactly as
+# `run` would.
+#
+# Output handling matches `run`: stdout to the console and the stdout log,
+# stderr to the console and the stderr log. Those streams are captured to temp
+# files and flushed at the end, because the whole point is that there is nothing
+# to show while it runs — nothing is dropped, only deferred.
+#
+# The state poll is a bare `az` call, unlike every other command here: its trace
+# would double the heartbeat noise, and teardown.sh --verify polls the same way.
+# Only the poll skips `run`; the deployment itself is logged normally.
+#
+#   DEPLOY_POLL_SECONDS   heartbeat interval in seconds (default 30)
+#
+# The heartbeats are `info`, not `debug`: `::debug::` is invisible unless the
+# whole job runs with debug logging, which is exactly the "it looks stuck"
+# problem being fixed. Under the GitHub backend each one also becomes a summary
+# bullet, so a 20-minute deployment adds ~40 bullets to the run summary — raise
+# DEPLOY_POLL_SECONDS if that matters. Deploys are run by hand rather than in
+# CI (see AGENTS.md), so this is a knob, not a problem in practice.
+run_deployment() {
+  local deployment_name="${1:?usage: run_deployment <deployment-name> <az deployment sub args...>}"
+  shift
+  local poll_seconds="${DEPLOY_POLL_SECONDS:-30}"
+  local out_file err_file pid rc=0 elapsed=0 state="" is_what_if=0 arg
+  for arg in "$@"; do
+    if [[ "$arg" == "what-if" ]]; then
+      is_what_if=1
+    fi
+  done
+
+  out_file="$(mktemp "${TMPDIR:-/tmp}/oop-deploy-out.XXXXXX")"
+  err_file="$(mktemp "${TMPDIR:-/tmp}/oop-deploy-err.XXXXXX")"
+
+  log_cmd az deployment sub "$@"
+  az deployment sub "$@" >"$out_file" 2>"$err_file" &
+  pid=$!
+  # Ctrl-C must not leave the deployment running after the script is gone. az is
+  # in the same process group and gets the signal anyway; this covers the window
+  # where the shell would exit first. Restored on the way out, since the trap is
+  # global to the shell but this function is not the script's whole job.
+  trap 'kill "$pid" 2>/dev/null' INT TERM
+
+  if [[ "$is_what_if" == "1" ]]; then
+    info "What-if submitted; no deployment record is created to poll, reporting elapsed time only."
+  else
+    info "Deployment $deployment_name submitted; polling every ${poll_seconds}s."
+  fi
+  # `kill -0` is false once the child has been reaped, so this loop ends as soon
+  # as az exits, however long or short that took.
+  while kill -0 "$pid" 2>/dev/null; do
+    sleep "$poll_seconds"
+    kill -0 "$pid" 2>/dev/null || break
+    elapsed=$((elapsed + poll_seconds))
+    if [[ "$is_what_if" == "1" ]]; then
+      info "  still running after ~$(_elapsed_label "$elapsed")..."
+    else
+      state="$(az deployment sub show --name "$deployment_name" \
+        --query properties.provisioningState -o tsv 2>/dev/null || true)"
+      if [[ -n "$state" ]]; then
+        info "  still running after ~$(_elapsed_label "$elapsed") (state: $state)."
+      else
+        info "  still running after ~$(_elapsed_label "$elapsed") (state: not submitted yet)."
+      fi
+    fi
+  done
+  wait "$pid" || rc=$?
+  trap - INT TERM
+
+  if [[ -s "$out_file" ]]; then
+    if [[ -n "${STDOUT_LOG:-}" ]]; then
+      tee -a "$STDOUT_LOG" <"$out_file"
+    else
+      cat "$out_file"
+    fi
+  fi
+  if [[ -s "$err_file" ]]; then
+    if [[ -n "${STDERR_LOG:-}" ]]; then
+      cat "$err_file" >>"$STDERR_LOG"
+    fi
+    cat "$err_file" >&2
+  fi
+  rm -f "$out_file" "$err_file"
+
+  if ((rc != 0)); then
+    error "az deployment sub $deployment_name exited $rc; see its output above."
+  fi
+  return "$rc"
+}
+
 # group_exists <rg-name>: prints `true`/`false`. Exits nonzero (after an
 # `error` line) when `az` itself fails or prints something unexpected, so
 # callers never mistake an outage for absence. Capture with an explicit guard:

@@ -55,6 +55,26 @@ case "$LOG_FORMAT" in
     ;;
 esac
 
+# summary <markdown>: append a block to the workflow run's summary page
+# ($GITHUB_STEP_SUMMARY), which renders above the log where it is actually read
+# — a 30-minute teardown log is a scroll, the summary is a table. Also echoes the
+# text to the console, so a local run shows what CI would have summarised. The
+# file only exists on a runner, so locally the console echo is all there is —
+# nothing is lost either way. Top level only: the backends keep chatter off
+# stdout and the summary file is shared per step, so a $(...) capture must not
+# reach here.
+summary() {
+  if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+    printf '%s\n' "$*" >> "$GITHUB_STEP_SUMMARY"
+  fi
+  # Console echo via _log_stderr, not `info`: the GitHub backend now writes every
+  # `info` to the summary as an `- **info** …` bullet, so a markdown block passed
+  # through `info` would land there twice — once verbatim, once as a pile of
+  # bullets per line. _log_stderr is the backend-neutral write path and keeps the
+  # chatter off stdout, so a $(...) capture stays clean on both backends.
+  _log_stderr "$*"
+}
+
 log_vars() {
   # Two passes so the values align: first find the widest "key:", then print.
   # (A fixed width breaks as soon as a longer key like "Shared resource group"

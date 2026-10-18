@@ -43,6 +43,12 @@ Succeeded. `teardown.sh --verify` prints that verdict every 10 minutes while it
 waits for the group to drain. A usage error exits **64**, which collides with
 none of them.
 
+`--summary` (with `--rg`) appends the same facts to the workflow run summary as
+a markdown table, built from the collected values rather than scraped from the
+console output, so it stays correct whichever backend is printing. A 30-minute
+teardown is a scroll; the summary is a table. Outside a workflow run there is no
+summary file and it is a no-op.
+
 Two things to know about the output, both verified rather than assumed:
 
 - **Most resources report `n/a`.** `az resource show --query provisioningState`
@@ -64,6 +70,9 @@ Two things to know about the output, both verified rather than assumed:
   exits **64**.
 - `./scripts/check-state.sh --bogus` exits **64** with usage (distinct from the
   other scripts' 1 — a bad flag here is not a failed check).
+- `./scripts/check-state.sh --summary` without `--rg` exits **64**: the summary
+  block only exists for the single-group report.
+- `./scripts/check-logging.sh` passes every assertion (it is a CI gate).
 - `VAL=$(run az account show ... -o tsv)` captures **only** the command's output.
   Both `run` and `init_command_log` log to stderr for exactly this reason; if you
   ever change one to stdout, every `$(...)` capture in the scripts silently gains

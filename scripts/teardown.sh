@@ -116,15 +116,16 @@ if [[ "$VERIFY" == "1" ]]; then
   [[ "$max_attempts" -ge 1 ]] || max_attempts=1
 
   # report_drain: hand the group's current state to `check-state.sh --rg`, which
-  # prints the provisioning state and every resource's state. Progress reporting
-  # only -- the poll below decides when the group is gone, so a report that cannot
-  # be produced (usage error, a broken script, a flaky API) is a warning, never a
-  # failed run. `set -e` does not fire inside an `if`, so a non-zero verdict is
-  # expected here and must be read, not propagated.
+  # prints the provisioning state and every resource's state and, with
+  # --summary, appends the same as a markdown table to the run summary — so the
+  # drain reads as a timeline on the summary page instead of only in the log.
+  # Progress reporting only: the poll below decides when the group is gone, so a
+  # report that cannot be produced (usage error, a broken script, a flaky API) is
+  # a warning, never a failed run. `set -e` does not fire inside an `if`, so a
+  # non-zero verdict is expected here and must be read, not propagated.
   report_drain() {
     local rc=0
-    echo "--- state of $RG_NAME ---" >&2
-    "${SCRIPT_DIR}/check-state.sh" --rg "$RG_NAME" || rc=$?
+    "${SCRIPT_DIR}/check-state.sh" --rg "$RG_NAME" --summary || rc=$?
     case "$rc" in
       0) info "  $RG_NAME is gone." ;;
       1) warn "  still draining: some resources are not Succeeded." ;;
@@ -133,18 +134,22 @@ if [[ "$VERIFY" == "1" ]]; then
     esac
   }
 
+  started_at="$(date -u +%H:%M:%S)"
   step "Verifying resource group $RG_NAME is gone (up to ~${verify_wait_minutes} min)..."
   group "Waiting for $RG_NAME to be deleted"
   attempt=1
   next_report=1
+  rg_outcome="**not checked**"
   while [[ "$attempt" -le "$max_attempts" ]]; do
     RG_STILL_EXISTS="$(group_exists "$RG_NAME")" || {
       endgroup
       status=1
+      rg_outcome="**could not check** (az group exists failed)"
       break
     }
     if [[ "$RG_STILL_EXISTS" != "true" ]]; then
       success "Resource group $RG_NAME is gone."
+      rg_outcome="deleted (confirmed after ~$((attempt * poll_seconds / 60)) min)"
       break
     fi
     if (( attempt >= next_report )); then
@@ -153,6 +158,7 @@ if [[ "$VERIFY" == "1" ]]; then
     fi
     if [[ "$attempt" -eq "$max_attempts" ]]; then
       error "Resource group $RG_NAME still exists after ~${verify_wait_minutes} min."
+      rg_outcome="**still exists**"
       status=1
       break
     fi
@@ -166,13 +172,33 @@ if [[ "$VERIFY" == "1" ]]; then
 
   # An un-purged soft-deleted vault blocks the next same-name deploy, so a
   # leftover one fails loudly rather than becoming a confusing deploy error later.
+  vault_outcome="not checked"
   if vault_is_soft_deleted; then
     error "Key Vault $VAULT_NAME is still soft-deleted; purge it manually:"
     error "  az keyvault purge --name \"$VAULT_NAME\""
+    vault_outcome="**still soft-deleted** (blocks a same-name redeploy)"
     status=1
   else
     success "Key Vault $VAULT_NAME is not soft-deleted."
+    vault_outcome="not soft-deleted (a same-name redeploy is unblocked)"
   fi
+
+  # The run summary: one table answering "is this environment gone and can I
+  # deploy again?", which is the only question this workflow exists to answer.
+  # The per-report tables were appended above by `check-state.sh --summary`.
+  verify_outcome="passed"
+  if [[ "$status" -ne 0 ]]; then
+    verify_outcome="**failed**"
+  fi
+  summary ""
+  summary "## Teardown verify — ${RG_NAME}"
+  summary ""
+  summary "| Check | Outcome |"
+  summary "| --- | --- |"
+  summary "| Resource group | ${rg_outcome} |"
+  summary "| Key Vault \`${VAULT_NAME}\` | ${vault_outcome} |"
+  summary "| Verify step | ${verify_outcome} |"
+  summary "| Started | ${started_at} UTC |"
 
   if [[ "$status" == "0" ]]; then
     success "Verification passed."
@@ -233,7 +259,11 @@ fi
 # caught it. VAULT_WAS_LIVE (probed before the delete) is what separates them.
 if [[ "$PURGE_VAULT" == "1" ]]; then
   if ! vault_is_soft_deleted && ! vault_is_live && [[ "$VAULT_WAS_LIVE" == "0" ]]; then
-    info "Key Vault $VAULT_NAME not found (neither live nor soft-deleted) and was not live when this run started; skipping purge."
+    # `success`, not `info`: "nothing to purge, and a redeploy is unblocked" is
+    # the outcome this run exists to produce, and the GitHub backend puts
+    # successes in the workflow summary (see _log-ghactions.sh) while `info`
+    # stays closer to the log.
+    success "Key Vault $VAULT_NAME not found (neither live nor soft-deleted) and was not live when this run started; nothing to purge."
   else
     if ! vault_is_soft_deleted; then
       # The vault soft-deletes as part of the resource-group deletion, so this
@@ -270,7 +300,7 @@ if [[ "$PURGE_VAULT" == "1" ]]; then
     fi
     step "Purging soft-deleted Key Vault $VAULT_NAME..."
     run az keyvault purge --name "$VAULT_NAME"
-    info "Environment resource group deleted, vault purged."
+    success "Environment resource group deleted, vault purged."
   fi
 else
   info "Skipping Key Vault purge (pass --purge-vault to purge $VAULT_NAME for same-name redeploy)."

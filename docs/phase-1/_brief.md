@@ -131,12 +131,14 @@ scripts/common.sh                  # .env loader, RG/ACR/vault naming, DEPLOYMEN
 scripts/_log.sh                    # logging backends (_log-local/_log-ghactions),
                                    #   log_vars, init_command_log/log_cmd/run
 scripts/_azure.sh                  # subscription_name, group_exists, vault_* probes,
-                                   #   fetch_deployment_outputs
+                                   #   fetch_deployment_outputs, run_deployment
 scripts/validate-bicep.sh          # compiles infra/**/*.bicep + *.bicepparam
                                    #   with --stdout into build/bicep
+scripts/check-logging.sh           # offline self-check: every printer, both
+                                   #   backends, console + logs + run summary
 scripts/deploy-all.sh              # shared then environment; action passed through
 scripts/check-state.sh             # read-only provisioning check; exits 0/1, or
-                                   #   0/1/2 for --rg <name>
+                                   #   0/1/2 for --rg <name> (+ --summary)
 scripts/deploy-shared.sh           # sub deploy of shared.bicep; create|what-if;
                                    #   polls the deployment state until Succeeded
 scripts/deploy.sh                  # sub deploy, acr build, containerapp update, /health

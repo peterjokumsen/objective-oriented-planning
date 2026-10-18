@@ -162,6 +162,17 @@ jobs:
           set -euo pipefail
           shellcheck --severity=warning scripts/*.sh
 
+      # Emits through every printer and every command-log helper on both logging
+      # backends (no az, no .env), then asserts what the console streams, the
+      # three log files and the workflow summary each have to contain. The split
+      # is easy to break silently — an `info` that stops reaching a log, an
+      # unbalanced ::group::, an `exit` where a `return` belonged — and none of
+      # that shows up anywhere else until a failed run needs reading. The step
+      # summary it verifies is the one a reviewer reads first, so it is worth
+      # gating. See the script header for the full list of what is covered.
+      - name: Logging self-check
+        run: ./scripts/check-logging.sh
+
       # scripts/_log.sh picks one of two interchangeable logging backends at
       # source time. A printer that exists in only one of them type-checks fine
       # and then blows up at run time on the other platform, so the two

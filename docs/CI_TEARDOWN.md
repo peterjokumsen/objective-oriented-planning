@@ -207,7 +207,12 @@ and rebuilding it means re-pushing every image.
   with `RG_VERIFY_WAIT_MINUTES=5` when you only want a quick answer.
 - **Check the drain yourself:** `./scripts/check-state.sh --rg rg-oop-<env>`
   prints the group's provisioning state and every resource's state, with the
-  verdict in the exit code. That is exactly what `--verify` prints every 10 min.
+  verdict in the exit code. That is exactly what `--verify` prints every 10 min —
+  and it appends the same as a markdown table to the run summary when the
+  nightly workflow passes `--summary`.
+- **Read the run summary, not the log:** every nightly run ends with a table
+  answering the only question that matters — is the group gone, is the vault
+  unblocked, did verify pass — rendered above the log on the run's summary page.
 - **Dry run the workflow:** set the `dry_run` input. It stops after the pre-check
   and prints the resource group, vault and shared-RG decisions without touching
   Azure.
@@ -228,6 +233,7 @@ and rebuilding it means re-pushing every image.
 | Verify step: vault still soft-deleted                | The destroy step skipped the purge because the vault was briefly neither live nor soft-deleted. Fixed in PR #5 (`VAULT_WAS_LIVE` guard). If it recurs, purge manually with the command printed        |
 | Red run, console shows no detail                     | The **Upload script logs** artifact holds the command/stdout/stderr transcripts the console hides. Download it from the run summary                                                                   |
 | Red run: `Vault did not become soft-deleted`         | `VAULT_PURGE_WAIT_MINUTES` (5 in the workflow) was too short for this drain. Re-run the job, or purge manually with the command printed                                                               |
+| Run summary empty, or later steps swallowed          | `teardown.sh --verify` writes the run summary via `summary`; the GitHub backend renders `step` as `##` and `group` as `<details>`. An unclosed `group` swallows everything after it                   |
 | `scripts/check-state.sh` exits 64                    | Usage error, not a health verdict — a bad flag, or `--rg` with no group name. `--rg` also exits 0/1/2 by design; see § 6                                                                              |
 | Verify step: vault still soft-deleted                | The destroy step skipped the purge because the vault was briefly neither live nor soft-deleted. Fixed in PR #5 (`VAULT_WAS_LIVE` guard). If it recurs, purge manually with the command printed        |
 | Job silently did nothing                             | Nightly schedule disabled (60-day inactivity) or workflow disabled in the Actions tab                                                                                                                 |
@@ -250,6 +256,10 @@ and rebuilding it means re-pushing every image.
 - [`scripts/check-state.sh`](../scripts/check-state.sh) — read-only provisioning
   check; exits non-zero when anything is not Succeeded. `--rg <name>` reports one
   group and answers in its exit code (0 absent / 1 not Succeeded / 2 all
-  Succeeded), which is how `--verify` narrates a drain
+  Succeeded), which is how `--verify` narrates a drain; `--summary` adds the same
+  as markdown for the run summary
+- [`scripts/check-logging.sh`](../scripts/check-logging.sh) — drives every
+  printer through both backends offline and asserts where each message lands; a
+  CI gate
 - [`docs/architecture.md`](architecture.md) — what lives in which group, and why
 - [`PLAN.md`](PLAN.md) § Cost & safety — the cost model this workflow protects

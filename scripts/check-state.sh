@@ -9,6 +9,7 @@
 #
 #   ./scripts/check-state.sh                    full report, writes logs/
 #   ./scripts/check-state.sh --rg <name>        single-group report, no logs
+#   ... --rg <name> --summary                   + markdown for the run summary
 #
 # --rg mode exists for `teardown.sh --verify`, which reports on one resource
 # group while it drains: it prints nothing but the group's
@@ -26,7 +27,7 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 
 usage() {
   cat <<EOF
-Usage: $0 [--env-only] [--shared-only] [--rg <resource-group>]
+Usage: $0 [--env-only] [--shared-only] [--rg <resource-group>] [--summary]
 
   --env-only            check only rg-<base>-\$ENVIRONMENT
   --shared-only         check only rg-<base>-shared
@@ -34,10 +35,13 @@ Usage: $0 [--env-only] [--shared-only] [--rg <resource-group>]
                         its resources' states, nothing else. No command traces,
                         no log files; exit code 0=absent, 1=not Succeeded,
                         2=all Succeeded (see the header comment).
+  --summary             --rg only: also append the report as a markdown block
+                        to \$GITHUB_STEP_SUMMARY (workflow run summary).
+                        Does nothing outside a workflow run.
 EOF
 }
 
-# Usage: check-state.sh [--env-only] [--shared-only] [--rg <name>]
+# Usage: check-state.sh [--env-only] [--shared-only] [--rg <name>] [--summary]
 #   Default checks both resource groups. Flags limit the check to one side
 #   (e.g. --shared-only after deploy-shared.sh, --env-only after deploy.sh).
 #   --rg reports a single, named group instead (see usage above).
@@ -49,11 +53,13 @@ CHECK_ENV=1
 CHECK_SHARED=1
 RG_ONLY=""
 RG_SEEN=0
+SUMMARY=0
 while [[ $# -gt 0 ]]; do
   arg="$1"
   case "$arg" in
     --env-only) CHECK_SHARED=0 ;;
     --shared-only) CHECK_ENV=0 ;;
+    --summary) SUMMARY=1 ;;
     --rg)
       [[ $# -ge 2 ]] || {
         error "--rg needs a resource group name"
@@ -89,6 +95,11 @@ fi
 # say so rather than quietly dropping one of them.
 if [[ -n "$RG_ONLY" && ( "$CHECK_ENV" -eq 0 || "$CHECK_SHARED" -eq 0 ) ]]; then
   error "--rg cannot be combined with --env-only or --shared-only"
+  usage >&2
+  exit 64
+fi
+if [[ "$SUMMARY" -eq 1 && -z "$RG_ONLY" ]]; then
+  error "--summary only applies to --rg"
   usage >&2
   exit 64
 fi
@@ -312,6 +323,40 @@ report_single_rg() {
   report_rows "${GROUP_RES_TEXT[target]:-}" 0
 }
 
+# summarise_single_rg <rg-name>: the same facts as report_single_rg, as a
+# markdown block for the workflow run summary. Built from the collected values,
+# not scraped from the console output, so it stays correct whatever the backend
+# does to the text. No-op unless running on a runner (no $GITHUB_STEP_SUMMARY).
+# Resource names and states are ARM-controlled (letters, digits, dashes), so
+# nothing needs escaping for the table to render.
+summarise_single_rg() {
+  local rg_name="$1"
+  local rg_state="${GROUP_RG_STATE[target]:-unknown}"
+  local block="" name state
+
+  # Leading blank line: consecutive blocks (one per poll) need separating, or
+  # the next heading is absorbed into the previous table.
+  if [[ "$rg_state" == "absent" ]]; then
+    summary ""
+    summary "### ${rg_name} — gone (deleted or never created)"
+    return 0
+  fi
+
+  block=""
+  block+="### ${rg_name} at $(date -u +%H:%M:%S) UTC"
+  block+=$'\n\n'
+  block+="| Resource | State |"$'\n'
+  block+="| --- | --- |"
+  block+=$'\n'
+  block+="| _resource group_ | ${rg_state} |"
+  while IFS=$'\t' read -r name state; do
+    [[ -z "$name" ]] && continue
+    block+=$'\n'
+    block+="| ${name} | ${state:-unknown} |"
+  done <<< "${GROUP_RES_TEXT[target]:-}"
+  summary "$block"
+}
+
 # report_group <label> <rg-name>: prints one group's collected results.
 report_group() {
   local label="$1"
@@ -351,6 +396,9 @@ report_sub_deployments() {
 if [[ -n "$RG_ONLY" ]]; then
   collect_group "$RG_ONLY" "target" 0
   report_single_rg "$RG_ONLY"
+  if [[ "$SUMMARY" -eq 1 ]]; then
+    summarise_single_rg "$RG_ONLY"
+  fi
   if [[ "${GROUP_RG_STATE[target]:-}" == "absent" ]]; then
     exit 0
   fi
