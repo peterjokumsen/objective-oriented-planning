@@ -234,7 +234,7 @@ and rebuilding it means re-pushing every image.
 | Red run, console shows no detail                     | The **Upload script logs** artifact holds the command/stdout/stderr transcripts the console hides. Download it from the run summary                                                                   |
 | Red run: `Vault did not become soft-deleted`         | `VAULT_PURGE_WAIT_MINUTES` (5 in the workflow) was too short for this drain. Re-run the job, or purge manually with the command printed                                                               |
 | Run summary empty, or later steps swallowed          | `teardown.sh --verify` writes the run summary via `summary`; the GitHub backend renders `step` as `##` and `group` as `<details>`. An unclosed `group` swallows everything after it                   |
-| `scripts/check-state.sh` exits 64                    | Usage error, not a health verdict — a bad flag, or `--rg` with no group name. `--rg` also exits 0/1/2 by design; see § 6                                                                              |
+| `scripts/check-state.sh` exits 64                    | Usage error, not a health verdict — a bad flag, or `--rg` with no following argument. (`--rg=` with an empty value warns and falls back instead.) `--rg` also exits 0/1/2 by design; see § 6          |
 | Verify step: vault still soft-deleted                | The destroy step skipped the purge because the vault was briefly neither live nor soft-deleted. Fixed in PR #5 (`VAULT_WAS_LIVE` guard). If it recurs, purge manually with the command printed        |
 | Job silently did nothing                             | Nightly schedule disabled (60-day inactivity) or workflow disabled in the Actions tab                                                                                                                 |
 | `BASE_NAME: parameter null` style script errors      | `scripts/common.sh` requires `BASE_NAME`/`LOCATION`/`SUBSCRIPTION_ID`; confirm the GitHub variables exist                                                                                             |
@@ -254,10 +254,11 @@ and rebuilding it means re-pushing every image.
   `group_exists`, `vault_is_live`/`vault_is_soft_deleted`,
   `fetch_deployment_outputs`
 - [`scripts/check-state.sh`](../scripts/check-state.sh) — read-only provisioning
-  check; exits non-zero when anything is not Succeeded. `--rg <name>` reports one
-  group and answers in its exit code (0 absent / 1 not Succeeded / 2 all
-  Succeeded), which is how `--verify` narrates a drain; `--summary` adds the same
-  as markdown for the run summary
+  check over **every** `rg-<base>*` group in the subscription; exits non-zero
+  when anything is not Succeeded. `--rg <name>` reports one group and answers in
+  its exit code (0 absent / 1 not Succeeded / 2 all Succeeded), which is how
+  `--verify` narrates a drain; `--summary` adds the same as markdown for the run
+  summary
 - [`scripts/check-logging.sh`](../scripts/check-logging.sh) — drives every
   printer through both backends offline and asserts where each message lands; a
   CI gate

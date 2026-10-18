@@ -137,8 +137,9 @@ scripts/validate-bicep.sh          # compiles infra/**/*.bicep + *.bicepparam
 scripts/check-logging.sh           # offline self-check: every printer, both
                                    #   backends, console + logs + run summary
 scripts/deploy-all.sh              # shared then environment; action passed through
-scripts/check-state.sh             # read-only provisioning check; exits 0/1, or
-                                   #   0/1/2 for --rg <name> (+ --summary)
+scripts/check-state.sh             # read-only provisioning check over every
+                                   #   rg-<base>* group; exits 0/1, or 0/1/2
+                                   #   for --rg <name> (+ --summary)
 scripts/deploy-shared.sh           # sub deploy of shared.bicep; create|what-if;
                                    #   polls the deployment state until Succeeded
 scripts/deploy.sh                  # sub deploy, acr build, containerapp update, /health

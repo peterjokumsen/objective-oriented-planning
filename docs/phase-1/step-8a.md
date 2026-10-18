@@ -21,7 +21,7 @@ Read-only. It runs every probe first (each `step`/`+` line goes to stderr), then
 prints one consolidated report: per resource group the group's `provisioningState`,
 then one `name: state` line per resource, then the latest three group-scope
 deployments; afterwards it does the same for subscription-scope deployments
-filtered to this project's `oop-dev-` / `oop-shared-` prefixes. Lines are
+filtered to that group's name prefix (`oop-dev-`, `oop-shared-`, …). Lines are
 colour-coded by state locally and turned into GitHub Actions annotations in CI
 (`scripts/_log.sh` picks the backend).
 
@@ -31,8 +31,18 @@ as a deployment that _succeeded_, so the latest-deployment rows are folded into
 the verdict too: a failed last run fails the check even while the live resources
 still look healthy.
 
-`--env-only` / `--shared-only` limit it to one side, which is what you want
-mid-sequence (after `deploy-shared.sh`, before `deploy.sh`).
+With no `--rg` the scope is **every resource group belonging to `$BASE_NAME`**,
+discovered from the subscription with `az group list` rather than assumed from
+`$ENVIRONMENT`. That matters the moment a second environment exists: a report
+built from `rg-<base>-$ENVIRONMENT` plus `rg-<base>-shared` silently omits a
+`staging` group that is burning money. `--env-only` / `--shared-only` narrow it
+back to the two names `common.sh` derives, which is what you want mid-sequence
+(after `deploy-shared.sh`, before `deploy.sh`).
+
+A failed listing and a successful-but-empty listing are kept apart on purpose.
+A failed one falls back to the derived names **with a warning**, because an
+outage must not be presented as "everything is deleted"; an empty one reports
+the derived names as absent, which is the true answer.
 
 `--rg <name>` is a fourth mode, added when `teardown.sh --verify` grew progress
 reporting: it reports a single resource group — its provisioning state and its
@@ -42,6 +52,11 @@ answers in its **exit code** so a caller need not parse the report: **0** absent
 Succeeded. `teardown.sh --verify` prints that verdict every 10 minutes while it
 waits for the group to drain. A usage error exits **64**, which collides with
 none of them.
+
+An empty `--rg=` (the flag with no value) is treated as a typo rather than an
+empty scope: it warns and falls back to the full scope, because silently
+reporting nothing is the worst available answer. `--rg` with no following
+argument at all is still a usage error (**64**).
 
 `--summary` (with `--rg`) appends the same facts to the workflow run summary as
 a markdown table, built from the collected values rather than scraped from the

@@ -11,6 +11,14 @@
 #   ./scripts/check-state.sh --rg <name>        single-group report, no logs
 #   ... --rg <name> --summary                   + markdown for the run summary
 #
+# With no --rg the scope is *every* resource group belonging to $BASE_NAME
+# (rg-<base>-*), discovered from the subscription rather than assumed from
+# $ENVIRONMENT. That matters once a second environment exists: a report that
+# only ever looks at rg-<base>-$ENVIRONMENT and rg-<base>-shared silently omits
+# a staging group that is burning money. --env-only / --shared-only narrow it
+# back to the two names common.sh derives, which is what you want mid-sequence
+# (after deploy-shared.sh, before deploy.sh).
+#
 # --rg mode exists for `teardown.sh --verify`, which reports on one resource
 # group while it drains: it prints nothing but the group's
 # provisioning state and its resources' states, keeps the `+ az ...` traces off
@@ -29,12 +37,17 @@ usage() {
   cat <<EOF
 Usage: $0 [--env-only] [--shared-only] [--rg <resource-group>] [--summary]
 
+  (no --rg)             check every resource group belonging to \$BASE_NAME
+                        (rg-<base>-*), discovered from the subscription.
   --env-only            check only rg-<base>-\$ENVIRONMENT
   --shared-only         check only rg-<base>-shared
   --rg <name>           report one resource group: its provisioning state and
                         its resources' states, nothing else. No command traces,
                         no log files; exit code 0=absent, 1=not Succeeded,
                         2=all Succeeded (see the header comment).
+                        An empty value (--rg=) warns and falls back to the
+                        default scope rather than narrowing the report to
+                        nothing.
   --summary             --rg only: also append the report as a markdown block
                         to \$GITHUB_STEP_SUMMARY (workflow run summary).
                         Does nothing outside a workflow run.
@@ -42,8 +55,9 @@ EOF
 }
 
 # Usage: check-state.sh [--env-only] [--shared-only] [--rg <name>] [--summary]
-#   Default checks both resource groups. Flags limit the check to one side
-#   (e.g. --shared-only after deploy-shared.sh, --env-only after deploy.sh).
+#   Default checks every rg-<base>* group in the subscription. --env-only /
+#   --shared-only narrow it to one side (e.g. --shared-only after
+#   deploy-shared.sh, --env-only after deploy.sh).
 #   --rg reports a single, named group instead (see usage above).
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   usage
@@ -83,13 +97,13 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 
-# --rg= with nothing after it would otherwise fall through to the full report,
-# silently ignoring the flag. RG_SEEN rather than ${RG_ONLY+x}: RG_ONLY is
-# always assigned above, so the expansion test is always true.
+# `--rg=` with nothing after it is a typo, not a request for an empty scope, and
+# silently reporting nothing is the worst possible answer to it — so say what
+# happened and fall back to the full scope. RG_SEEN rather than ${RG_ONLY+x}:
+# RG_ONLY is always assigned above, so the expansion test is always true.
 if [[ "$RG_SEEN" -eq 1 && -z "$RG_ONLY" ]]; then
-  error "--rg needs a resource group name"
-  usage >&2
-  exit 64
+  warn "--rg needs a resource group name; falling back to every rg-${BASE_NAME}-* group."
+  RG_SEEN=0
 fi
 # --rg names the group, so the env/shared selectors would just be ignored:
 # say so rather than quietly dropping one of them.
@@ -410,37 +424,96 @@ fi
 # round-trip, and every caller only wants it for the log line.
 SUB_NAME="$(subscription_name)"
 
+# --- scope: which groups this report covers -----------------------------------
+#
+# RG_NAMES / GROUP_LABELS are parallel arrays; the label is the group name with
+# the rg-<base>- prefix stripped, which is also the middle segment of every
+# deployment name for it (<base>-<label>-<timestamp>) — so one value drives the
+# report heading, the sub-deployment prefix and the summary.
+#
+# Not called GROUPS: bash treats that as the read-only built-in holding the
+# current user's group IDs, so an assignment to it is silently dropped and the
+# count comes back as the user's group count instead of the resource groups.
+RG_NAMES=()
+GROUP_LABELS=()
+
+add_group() {
+  local name="$1" label="${1#rg-${BASE_NAME}-}"
+  RG_NAMES+=("$name")
+  GROUP_LABELS+=("$label")
+}
+
+# discover_groups: every resource group in the subscription that belongs to this
+# BASE_NAME, so a second environment is covered instead of silently omitted.
+#
+# Two different empty answers are separated on purpose. A *failed* listing is an
+# outage or a bad credential, and falling back to the derived names (reported as
+# absent) would present that as "everything is deleted" — the most dangerous
+# possible reading. So a failure falls back with a warning, while a successful
+# listing that simply found nothing reports the derived names as absent, which is
+# the true answer.
+discover_groups() {
+  local ok=1 names="" name
+  names="$(run_hide_stderr az group list \
+    --query "[?starts_with(name, 'rg-${BASE_NAME}-')].name" -o tsv)" || ok=0
+
+  if [[ "$ok" -eq 1 && -n "$names" ]]; then
+    while IFS= read -r name; do
+      [[ -z "$name" ]] && continue
+      add_group "$name"
+    done < <(printf '%s\n' "$names" | sort)
+    return 0
+  fi
+
+  if [[ "$ok" -eq 0 ]]; then
+    warn "Could not list resource groups matching rg-${BASE_NAME}-* (see above); checking the two derived names instead."
+  else
+    info "No resource group matches rg-${BASE_NAME}-*; reporting the derived names as absent."
+  fi
+  add_group "$RG_NAME"
+  add_group "$SHARED_RG_NAME"
+}
+
+if [[ "$CHECK_ENV" -eq 0 ]]; then
+  add_group "$SHARED_RG_NAME"
+  SCOPE_DESC="shared only: $SHARED_RG_NAME"
+elif [[ "$CHECK_SHARED" -eq 0 ]]; then
+  add_group "$RG_NAME"
+  SCOPE_DESC="environment only: $RG_NAME"
+else
+  step "Discovering resource groups matching rg-${BASE_NAME}-*..."
+  discover_groups
+  SCOPE_DESC="every rg-${BASE_NAME}-* group in the subscription"
+fi
+
+GROUP_COUNT="${#RG_NAMES[@]}"
 log_vars \
   "Subscription=$SUB_NAME ($SUBSCRIPTION_ID)" \
   "Resource group=$RG_NAME" \
-  "Shared resource group=$SHARED_RG_NAME"
+  "Shared resource group=$SHARED_RG_NAME" \
+  "Scope=$SCOPE_DESC" \
+  "Groups in scope=$GROUP_COUNT"
 
-ENV_SUB_ROWS=""
-ENV_SUB_OK=1
-SHARED_SUB_ROWS=""
-SHARED_SUB_OK=1
+# SUB_ROWS_BY_GROUP / SUB_OK_BY_GROUP hold each group's subscription-scope
+# deployment rows, keyed by group name: the listing is per-name-prefix, so N
+# groups mean N calls and N results to report.
+declare -A SUB_ROWS_BY_GROUP SUB_OK_BY_GROUP
 
-if [[ "$CHECK_ENV" == "1" ]]; then
-  check_group "$RG_NAME" "environment"
+for i in "${!RG_NAMES[@]}"; do
+  rg_name="${RG_NAMES[$i]}"
+  label="${GROUP_LABELS[$i]}"
 
-  step "Fetching environment subscription deployments..."
-  if ! fetch_sub_deployments "${BASE_NAME}-${ENVIRONMENT}-"; then
-    ENV_SUB_OK=0
+  check_group "$rg_name" "$label"
+
+  step "Fetching ${label} subscription deployments..."
+  if fetch_sub_deployments "${BASE_NAME}-${label}-"; then
+    SUB_ROWS_BY_GROUP["$rg_name"]="$SUB_ROWS"
+    SUB_OK_BY_GROUP["$rg_name"]=1
   else
-    ENV_SUB_ROWS="$SUB_ROWS"
+    SUB_ROWS_BY_GROUP["$rg_name"]=""
+    SUB_OK_BY_GROUP["$rg_name"]=0
   fi
-fi
-
-if [[ "$CHECK_SHARED" == "1" ]]; then
-  check_group "$SHARED_RG_NAME" "shared"
-
-  step "Fetching shared subscription deployments..."
-  if ! fetch_sub_deployments "${BASE_NAME}-shared-"; then
-    SHARED_SUB_OK=0
-  else
-    SHARED_SUB_ROWS="$SUB_ROWS"
-  fi
-fi
+done
 
 # ---------------------------------------------------------------- report ----
 
@@ -453,23 +526,17 @@ step "Report"
 group "Report"
 log_vars \
   "Subscription=$SUB_NAME ($SUBSCRIPTION_ID)" \
-  "Scope=$([[ "$CHECK_ENV" == "1" && "$CHECK_SHARED" == "1" ]] && echo 'environment + shared' || ([[ "$CHECK_ENV" == "1" ]] && echo 'environment only' || echo 'shared only'))"
+  "Scope=$SCOPE_DESC" \
+  "Groups in scope=$GROUP_COUNT" \
+  "Environment=${ENVIRONMENT}"
 
-if [[ "$CHECK_ENV" == "1" ]]; then
-  report_group "environment" "$RG_NAME"
-fi
-
-if [[ "$CHECK_SHARED" == "1" ]]; then
-  report_group "shared" "$SHARED_RG_NAME"
-fi
-
-if [[ "$CHECK_ENV" == "1" ]]; then
-  report_sub_deployments "environment" "$ENV_SUB_ROWS" "$ENV_SUB_OK"
-fi
-
-if [[ "$CHECK_SHARED" == "1" ]]; then
-  report_sub_deployments "shared" "$SHARED_SUB_ROWS" "$SHARED_SUB_OK"
-fi
+for i in "${!RG_NAMES[@]}"; do
+  rg_name="${RG_NAMES[$i]}"
+  label="${GROUP_LABELS[$i]}"
+  report_group "$label" "$rg_name"
+  report_sub_deployments "$label" \
+    "${SUB_ROWS_BY_GROUP[$rg_name]:-}" "${SUB_OK_BY_GROUP[$rg_name]:-1}"
+done
 endgroup
 
 step "Summary"
