@@ -90,9 +90,10 @@ pre-commit run --all-files
 - `git status --short` — only intended files. No `.env`, no `infra/*.json` build
   output, no `.pytest_cache`, no `.ruff_cache`, no deploy logs.
 - `git check-ignore -v .env` still reports ignored.
-- `grep -rn "memwell" docs/ .github/ scripts/ infra/ api/` — nothing. The port's
+- `grep -rn "memwell" .github/ scripts/ infra/ api/` — nothing. The port's
   provenance is one line in each ported script's header comment, not a scatter
-  of the old project's names.
+  of the old project's names. (`docs/` may name it when explaining what a port
+  changed from; the phase docs do.)
 - Confirm `.gitignore` covers anything the new directories introduced.
 
 ## Verify

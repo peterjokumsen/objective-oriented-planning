@@ -3,17 +3,22 @@
 Ported from `~/repos/memorywell/scripts/common.sh` per `AGENTS.md` § Repo rules
 — reviewed against the current version, not copied blind. Every resource name
 changes from the `memwell` prefix to `oop`; the shape is otherwise what the
-deploy and teardown scripts in this repo depend on.
+deploy and teardown scripts in this repo depend on. Since the original port it
+also shrank: the logging backends and the `az` probes moved into `scripts/_log.sh`
+and `scripts/_azure.sh`, so this file is only configuration and naming.
 
 It has four jobs: load `.env`, compute names, mint a unique deployment name, and
-provide output helpers.
+source those two helpers.
 
 ## Sourced, not executed
 
 `common.sh` has **no shebang** and is never run directly — it is sourced by
-`deploy.sh`, `deploy-shared.sh` and `teardown.sh`. That is why CI currently runs
-shellcheck with `--exclude=SC2148` ("shebang is missing") and
-`continue-on-error`. Step 11 cleans both up; until then they are expected.
+`deploy.sh`, `deploy-all.sh`, `deploy-shared.sh`, `teardown.sh` and
+`check-state.sh`. It declares `# shellcheck shell=bash` as the first line, which
+is how it satisfies the `shellcheck --severity=warning` gate with no exclusions
+and no `continue-on-error`. (It briefly carried a shebang and a sourced-file
+guard instead; the guard was noise once shellcheck ran clean, and the split into
+`_`-prefixed helpers settled the shape.)
 
 ## Naming
 
@@ -91,7 +96,9 @@ only `deployment_name` should create one.
 ## The `run` family
 
 Every `az`/`curl` call goes through one of three wrappers, which log the command
-to `logs/<script>-<timestamp>.log` as `+ az ...`:
+to `logs/<script>-<timestamp>_commands.log` as `+ az ...` (with stdout and stderr
+also teed into their own `_stdout` / `_stderr` files, so a probe's hidden stderr
+and a `$(...)` capture's output are recoverable after the console scrolled past):
 
 | Wrapper           | Use for                                                           |
 | ----------------- | ----------------------------------------------------------------- |
@@ -102,20 +109,42 @@ to `logs/<script>-<timestamp>.log` as `+ az ...`:
 **Never append `2>/dev/null` to `run`.** That redirects `run` itself and swallows
 the trace along with it, losing the record you wanted. Use `run_hide_stderr`.
 
-Also in `common.sh`: `subscription_name()` (explicit `--subscription`, so it never
-depends on ambient context), `fetch_deployment_outputs` (polls ARM outputs until
-populated), and the `group_exists` / `vault_is_live` / `vault_is_soft_deleted`
-probes — which exit non-zero when `az` itself fails, so an outage is never
-mistaken for absence.
+The wrappers and the message printers live in `scripts/_log.sh` (which picks
+`_log-local.sh` for a TTY or `_log-ghactions.sh` under Actions, so CI gets
+`::warning::`/`::error::` annotations, `##` headings and `<details>` blocks on
+the run summary, and collapsible groups instead of colour). Under Actions
+nothing is an annotation unless something went wrong: `step` becomes a summary
+heading, `success`/`info` bullets, `warn`/`error` the annotations. `summary
+<markdown>` appends a block verbatim to `$GITHUB_STEP_SUMMARY` (the run summary
+page, which is what a human reads first) and echoes it locally.
+
+`scripts/check-logging.sh` drives every printer and every `run*` wrapper through
+both backends offline — no `az`, no `.env` — and asserts where each message
+lands: the console streams, the three log files, and the summary. It runs in CI
+because every one of those splits is easy to break silently, and none of them
+shows up anywhere else until a failed run needs reading.
+
+`common.sh` keeps only the `az` helpers: `subscription_name()`
+(explicit `--subscription`, so it never depends on ambient context, and cached in
+a file because every caller uses it inside a `$(...)` capture),
+`fetch_deployment_outputs` (polls ARM outputs until populated), and the
+`group_exists` / `vault_is_live` / `vault_is_soft_deleted` probes — which exit
+non-zero when `az` itself fails, so an outage is never mistaken for absence — plus
+`run_deployment`, which backgrounds a Bicep subscription deployment and
+heartbeats `provisioningState` while it runs. `az deployment sub create` prints
+nothing until ARM returns (minutes, for the managed environment), so `run` alone
+leaves the log frozen on one trace line; `run_deployment` reports elapsed time
+and ARM's state every `DEPLOY_POLL_SECONDS` (default 30) and flushes the command's
+output at the end without dropping it.
 
 ## Verify
 
-- `bash -n scripts/common.sh` clean.
-- `. .env && source scripts/common.sh && echo "$RG_NAME $SHARED_RG_NAME $SHARED_ACR_NAME"`
-  prints `rg-oop-dev rg-oop-shared acroop`.
+- `bash -n scripts/common.sh scripts/_log.sh scripts/_azure.sh` clean.
+- `. .env && source scripts/common.sh && echo "$RG_NAME $SHARED_RG_NAME $SHARED_ACR_NAME $VAULT_NAME"`
+  prints `rg-oop-dev rg-oop-shared acroop kv-oop-dev`.
 - `source scripts/common.sh` in a shell with no `.env` and no `BASE_NAME` exits
   with the `:?` message — the guard works.
-- With `.env` present, it prints `Loaded .env`.
+- With `.env` present, it prints `debug: Loaded .env`.
 - `DEPLOYMENT_NAME` matches `<base>-<env>-<14 digits>`, and `IMAGE_TAG` is
   `dev-<those digits>`. Run twice: the second run gets a **different** name.
 - `REUSE_DEPLOYMENT=1` on a second call reuses the recorded name.

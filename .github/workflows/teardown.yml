@@ -32,6 +32,16 @@ on:
         required: false
         default: true
         type: boolean
+      delete_shared:
+        description: Also delete the shared resource group (ACR + App Configuration). Ignored when the SHARED_LOCK repo variable is true.
+        required: false
+        default: false
+        type: boolean
+      dry_run:
+        description: Show what would be deleted, change nothing in Azure.
+        required: false
+        default: false
+        type: boolean
 
 # `id-token: write` is what makes OIDC possible. There is no stored client
 # secret anywhere in this repo -- the credential is scoped to the `azure`
@@ -52,9 +62,11 @@ jobs:
     name: Tear down environment
     runs-on: ubuntu-latest
     # Must cover the worst case of both waits in teardown.sh: the destroy step
-    # waits up to ~20 min for the vault to soft-delete, then --verify waits up to
-    # ~40 min for the group to finish draining. 60 would land exactly on that
-    # ceiling and kill the job mid-verify.
+    # waits up to 5 min for the vault to soft-delete (VAULT_PURGE_WAIT_MINUTES
+    # below, deliberately short so it cannot eat this budget), then --verify
+    # waits up to ~40 min for the group to finish draining. 90 leaves real
+    # headroom over that ~45 min; the local default vault wait is 20 min, so
+    # raising VAULT_PURGE_WAIT_MINUTES towards it needs this raised too.
     timeout-minutes: 90
     # `azure` here is a GitHub Environment (protection rules + the OIDC federated
     # credential; see docs/CI_TEARDOWN.md) -- not to be confused with the
@@ -91,9 +103,11 @@ jobs:
 
       # Read-only. Publishes needs_teardown so the destructive step can be
       # skipped. Almost every nightly run takes the "nothing to tear down" branch,
-      # which is the point: the common case must cost nothing.
+      # which is the point: the common case must cost nothing. A dry run stops
+      # here and reports instead.
       - name: Cheap pre-check
         id: precheck
+        if: inputs.dry_run != true
         run: ./scripts/teardown.sh --precheck
 
       # Order matters -- rg-oop-<env> first, rg-oop-shared only with --shared.
@@ -102,24 +116,67 @@ jobs:
       # because resource-group deletion is async and the vault may not be
       # soft-deleted yet.
       - name: Destroy the environment resource group
-        if: steps.precheck.outputs.needs_teardown == 'true'
+        if: steps.precheck.outputs.needs_teardown == 'true' && inputs.dry_run != true
+        env:
+          # teardown.sh waits this long for the vault to surface as
+          # soft-deleted after `group delete --no-wait`. Short on purpose: the
+          # Verify step owns the long wait (it is already polling the group),
+          # and this must not eat into the job's timeout budget. Do not raise it
+          # towards the ~20 min default without raising timeout-minutes too.
+          VAULT_PURGE_WAIT_MINUTES: "5"
         run: |
           set -euo pipefail
           flags=()
           if [[ "${{ inputs.purge_vault }}" == "true" ]]; then
             flags+=(--purge-vault)
           fi
+          # The shared RG (ACR + App Configuration) survives teardown by default:
+          # it is subscription-scoped and expensive to recreate. Delete it only
+          # when a manual run asks for it, or when SHARED_LOCK is not "true".
+          # Inputs are empty strings on the schedule trigger, not "false".
+          if [[ "${{ inputs.delete_shared }}" == "true" ]]; then
+            flags+=(--shared)
+          elif [[ "${{ vars.SHARED_LOCK }}" != "true" ]]; then
+            flags+=(--shared)
+          fi
           ./scripts/teardown.sh "${flags[@]}"
 
       - name: Nothing to tear down
-        if: steps.precheck.outputs.needs_teardown != 'true'
+        if: steps.precheck.outputs.needs_teardown != 'true' && inputs.dry_run != true
         run: echo "rg-oop-${{ env.ENVIRONMENT }} is absent and no vault is soft-deleted; skipping the destructive step."
+
+      - name: Show what would be deleted (dry run)
+        if: inputs.dry_run == true
+        run: |
+          set -euo pipefail
+          echo "DRY RUN — nothing below is executed."
+          echo "Resource group:     rg-${{ env.BASE_NAME }}-${{ env.ENVIRONMENT }}"
+          echo "Key Vault purge:    ${{ inputs.purge_vault }}"
+          echo "Shared RG deletion: ${{ inputs.delete_shared || vars.SHARED_LOCK != 'true' }}"
+          echo "Re-run without the dry_run input to apply."
 
       # Re-check that rg-oop-<env> is gone and the vault is no longer
       # soft-deleted. A silent partial teardown is the failure mode worth
       # catching, because the cost it leaks is invisible until the next billing
       # statement. teardown.sh polls ~40 min for the RG (the Container Apps
-      # managed environment is slow to drain), so timeout-minutes must exceed it.
+      # managed environment is slow to drain) and reports what is left to drain
+      # through `check-state.sh --rg`, so timeout-minutes must exceed the poll.
       - name: Verify
-        if: steps.precheck.outputs.needs_teardown == 'true'
+        if: steps.precheck.outputs.needs_teardown == 'true' && inputs.dry_run != true
         run: ./scripts/teardown.sh --verify
+
+      # The three log files written by init_command_log (command traces, stdout,
+      # stderr) hold what the console deliberately hides: stderr from the
+      # existence probes, and command output consumed by a $(...) capture.
+      # `if: always()` so a red run is still diagnosable after the runner is
+      # discarded; ignored on a dry run, which runs no scripts and so writes
+      # none. Short retention: these are per-nightly debug artifacts, not
+      # something to keep.
+      - name: Upload script logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: script-logs-${{ env.ENVIRONMENT }}
+          path: logs/
+          if-no-files-found: ignore
+          retention-days: 7
