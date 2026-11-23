@@ -9,5 +9,3 @@ export class HealthService {
     return this.http.get<{ status: string }>('/api/health');
   }
 }
-EOF
-echo done

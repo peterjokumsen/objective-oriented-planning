@@ -6,11 +6,12 @@ export class ThemeService {
 
   setMode(mode: 'light' | 'dark' | 'system') {
     this.mode.set(mode);
-    const resolved = mode === 'system'
-      ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
-      : mode;
+    const resolved =
+      mode === 'system'
+        ? window.matchMedia('(prefers-color-scheme: dark)').matches
+          ? 'dark'
+          : 'light'
+        : mode;
     document.documentElement.setAttribute('data-theme', resolved);
   }
 }
-EOF
-echo done
