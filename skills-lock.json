@@ -1,0 +1,47 @@
+{
+  "version": 2,
+  "skills": {
+    "azure-functions": {
+      "source": "MicrosoftDocs/Agent-Skills",
+      "commit": "9b16b5c7c7716949c83fc4bbdc448e0ada7f93a3",
+      "sourceType": "github",
+      "skillPath": "skills/azure-functions/SKILL.md",
+      "computedHash": "dafcb514a5dd7f1d3756d7e29ad2b59efaebd244238ebdff062fcff45e1f842c"
+    },
+    "csharp-expert": {
+      "source": "dotnet/skills",
+      "commit": "cc3964231c1c89ed1df22801682ab9458b58f219",
+      "sourceType": "github",
+      "skillPath": "plugins/dotnet/skills/csharp-expert/SKILL.md",
+      "computedHash": "81c33ee4d5d24c6a32c312deb434027e488512ba93162d9278c69f7b863c5a4d"
+    },
+    "nx-monorepo": {
+      "source": "giuseppe-trisciuoglio/developer-kit",
+      "commit": "fe73fb33a09ee6562eeec7415a3f9a3bcf795177",
+      "sourceType": "github",
+      "skillPath": "plugins/developer-kit-typescript/skills/nx-monorepo/SKILL.md",
+      "computedHash": "941d3eb8bb99f1c4b9a8a21e5b0d743d04ef21244c9ed52178ff6decbba98dcd"
+    },
+    "openapi-spec-generation": {
+      "source": "wshobson/agents",
+      "commit": "1eecf4b58eb380ff7ddc258a11c6586381d67b95",
+      "sourceType": "github",
+      "skillPath": "plugins/documentation-generation/skills/openapi-spec-generation/SKILL.md",
+      "computedHash": "7d034b06630d89c13d4ac440529eb1832ac8643beddb62ba68fc05324e0a21f1"
+    },
+    "openapi-to-application-code": {
+      "source": "github/awesome-copilot",
+      "commit": "f10fdb8b2660ce85c98f220b2f1ca24653768a5c",
+      "sourceType": "github",
+      "skillPath": "skills/openapi-to-application-code/SKILL.md",
+      "computedHash": "35cc721e6b9aca87dffeaa3b94469be596209783dc9de4191305576cbf5d2dab"
+    },
+    "tdd": {
+      "source": "mattpocock/skills",
+      "commit": "abeeaf95660ba9e8b7c753eb38f441ca707a8823",
+      "sourceType": "github",
+      "skillPath": "skills/engineering/tdd/SKILL.md",
+      "computedHash": "e3e0f78ff1c2d52ffefa0378baa1e80e129d359288cf9a56f4e59afcd2aac86c"
+    }
+  }
+}

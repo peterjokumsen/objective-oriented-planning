@@ -69,3 +69,32 @@ Revisit if the app is ever used for more than a handful of concurrent plans.
 - **Image tags carry that timestamp**, which is what mints a new Container Apps
   revision on each deploy. Re-pushing the floating `api:<env>` tag alone would
   change nothing, because Container Apps reacts to the image _string_.
+
+## Phase 2 — stack (as built / in progress)
+
+### Monorepo layout (Nx, pnpm)
+
+- `apps/` — frontends (Angular PWA + e2e)
+- `libs/` — cross-cutting shared libs (TS: api-client, domain-types, ui)
+- `bffs/` — BFFs (Azure Functions, C#, isolated worker, .NET 10) — communication layer for frontends
+- `backends/` — backend domain + data (C# class libs: domain, data, tests)
+
+### Frontend
+
+- Angular 22 PWA (`apps/web`), standalone components, signals, new control flow, Angular Material, PWA service worker.
+- API calls centralized in `libs/ts/api-client`, generated from the BFF OpenAPI spec.
+
+### BFF
+
+- Azure Functions isolated worker (.NET 10), REPR-style endpoints, OpenAPI exposed, Easy Auth stub middleware, Cosmos client stub (unused until Phase 3).
+
+### Backend
+
+- `backends/domain`: entities + pure rollup/scoring functions (xUnit).
+- `backends/data`: Cosmos DB .NET SDK access (serverless).
+
+### Tooling
+
+- TS/JS: ESLint + Prettier; Angular ESLint; Vitest.
+- C#: `dotnet format` + analyzers; xUnit.
+- Scripts: shellcheck + bash -n. Bicep: az bicep format.

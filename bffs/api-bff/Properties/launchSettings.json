@@ -1,0 +1,9 @@
+{
+  "profiles": {
+    "api_bff": {
+      "commandName": "Project",
+      "commandLineArgs": "--port 7181",
+      "launchBrowser": false
+    }
+  }
+}
