@@ -20,7 +20,7 @@ on:
   # 03:17 UTC rather than 03:00 -- GitHub's scheduled workflows queue on the
   # hour, and the top of the hour is the slowest slot to start.
   schedule:
-    - cron: "17 3 * * *"
+    - cron: '17 3 * * *'
   workflow_dispatch:
     inputs:
       environment_name:
@@ -92,7 +92,7 @@ jobs:
       # so does not exist on the runner.
       - uses: actions/setup-python@v6
         with:
-          python-version: "3.11"
+          python-version: '3.11'
 
       - name: Log in to Azure (OIDC, no client secret)
         uses: azure/login@v2
@@ -123,7 +123,7 @@ jobs:
           # Verify step owns the long wait (it is already polling the group),
           # and this must not eat into the job's timeout budget. Do not raise it
           # towards the ~20 min default without raising timeout-minutes too.
-          VAULT_PURGE_WAIT_MINUTES: "5"
+          VAULT_PURGE_WAIT_MINUTES: '5'
         run: |
           set -euo pipefail
           flags=()

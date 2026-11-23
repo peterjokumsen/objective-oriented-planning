@@ -1,1 +1,1 @@
-export const UI_LIB = "ui";
+export const UI_LIB = 'ui';
