@@ -44,6 +44,9 @@
       "e2eTestRunner": "playwright",
       "style": "scss",
       "unitTestRunner": "vitest-angular"
+    },
+    "@nx/angular:component": {
+      "style": "css"
     }
   }
 }

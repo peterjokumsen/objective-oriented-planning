@@ -17,4 +17,7 @@ if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("APPLICATIONINSIGHT
         .UseAzureMonitorExporter();
 }
 
+builder.Services.AddSingleton<ApiBff.Services.CosmosClientStub>();
+builder.Services.AddSingleton<ApiBff.Services.EasyAuthStub>();
+
 builder.Build().Run();
