@@ -228,4 +228,11 @@ logs/
 .nx
 node_modules
 
+# .NET
+bin/
+obj/
+*.user
+*.suo
+*.cache
+
 __screenshots__/
