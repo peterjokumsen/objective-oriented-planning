@@ -1,14 +1,19 @@
 import {
   ApplicationConfig,
-  provideBrowserGlobalErrorListeners, isDevMode,
+  provideBrowserGlobalErrorListeners,
+  isDevMode,
 } from '@angular/core';
 import { provideRouter } from '@angular/router';
 import { appRoutes } from './app.routes';
 import { provideServiceWorker } from '@angular/service-worker';
 
 export const appConfig: ApplicationConfig = {
-  providers: [provideBrowserGlobalErrorListeners(), provideRouter(appRoutes), provideServiceWorker('ngsw-worker.js', {
-            enabled: !isDevMode(),
-            registrationStrategy: 'registerWhenStable:30000'
-          })],
+  providers: [
+    provideBrowserGlobalErrorListeners(),
+    provideRouter(appRoutes),
+    provideServiceWorker('ngsw-worker.js', {
+      enabled: !isDevMode(),
+      registrationStrategy: 'registerWhenStable:30000',
+    }),
+  ],
 };
