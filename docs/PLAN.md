@@ -13,8 +13,13 @@ that resolves to successful / partial / missed and can be renewed.
 > of what was decided before any code was written; this file is what the build
 > actually follows and may be edited as the plan is realised.
 > **Build repo:** `~/repos/objective-oriented-planning`
-> (github.com/peterjokumsen/objective-oriented-planning) — **Phase 1 in
-> progress**; brief at `docs/phase-1/_brief.md`, no application code yet.
+> (github.com/peterjokumsen/objective-oriented-planning).
+>
+> **Stack (updated Phase 2):** Nx monorepo (pnpm) with Angular PWA frontend,
+> C# Azure Functions (isolated, .NET 10) as BFF using REPR, C# backend domain/data
+> libs, OpenAPI-generated TS client. Replaces the earlier FastAPI/Python assumption.
+> Phases renumbered: new Phase 2 = Architecture/Frameworks/UI skeleton; former
+> Phases 2-7 shifted to 3-8.
 >
 > New ideas about where the project should go do **not** belong here — they go
 > in `~/repos/think-tank/objective-oriented-planning/FUTURE.md`. A change to

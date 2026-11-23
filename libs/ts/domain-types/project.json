@@ -1,0 +1,12 @@
+{
+  "name": "domain-types",
+  "root": "libs/ts/domain-types",
+  "sourceRoot": "libs/ts/domain-types/src",
+  "projectType": "library",
+  "targets": {
+    "test": {
+      "executor": "nx:run-commands",
+      "options": { "command": "npx vitest run", "cwd": "libs/ts/domain-types" }
+    }
+  }
+}

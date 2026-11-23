@@ -14,6 +14,7 @@ repos:
       - id: check-merge-conflict
       - id: check-yaml
         files: \.(yaml|yml)$
+        exclude: ^pnpm-lock\.yaml$
       - id: mixed-line-ending
         args: [--fix=lf]
 

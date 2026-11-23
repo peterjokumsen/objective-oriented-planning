@@ -1,0 +1,19 @@
+{
+  "name": "api-client",
+  "root": "libs/ts/api-client",
+  "sourceRoot": "libs/ts/api-client/src",
+  "projectType": "library",
+  "targets": {
+    "test": {
+      "executor": "nx:run-commands",
+      "options": { "command": "npx vitest run", "cwd": "libs/ts/api-client" }
+    },
+    "codegen": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "echo 'codegen: fetch /api/openapi.json and generate types (Phase 3)'",
+        "cwd": "libs/ts/api-client"
+      }
+    }
+  }
+}

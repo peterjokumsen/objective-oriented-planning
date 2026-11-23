@@ -223,3 +223,16 @@ __marimo__/
 # debugging aid for a failed deploy run, not an artefact worth committing --
 # they contain subscription ids and resource names.
 logs/
+
+.angular
+.nx
+node_modules
+
+# .NET
+bin/
+obj/
+*.user
+*.suo
+*.cache
+
+__screenshots__/
