@@ -19,5 +19,6 @@ if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("APPLICATIONINSIGHT
 
 builder.Services.AddSingleton<ApiBff.Services.CosmosClientStub>();
 builder.Services.AddSingleton<ApiBff.Services.EasyAuthStub>();
+builder.Services.AddTransient<ApiBff.Services.EasyAuthMiddleware>();
 
 builder.Build().Run();
