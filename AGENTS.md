@@ -124,11 +124,11 @@ deployment sub create …` trace and the first sign of anything arrives all at
   skipping ahead, no pre-implementation of future phases. Scaffolding a Phase 2
   field in Phase 1 is tempting and wrong.
 - Each phase follows this contract:
-  1. Agent writes `docs/phase-<n>/`: `_brief.md` (goal, concepts, prerequisites,
-     ordered-step index, file outline with paths and stubs rather than
-     implementations, manual verification checks, demo gate) plus one `step-x.md`
-     per ordered step carrying that step's instructions, stub shapes and its own
-     verification checks.
+  1. Agent writes `docs/phase-<n>/_brief.md`: goal, concepts, prerequisites,
+     ordered steps as a list (each with instructions, stub shapes and its own
+     verification checks), file outline with paths and stubs rather than
+     implementations, manual verification checks, and demo gate. Steps are not
+     split into separate files.
   2. Agent implements the code changes following the brief, running the local
      verification gates (pytest, bicep build + format, `bash -n`, shellcheck,
      `./scripts/check-logging.sh`) as it goes. No deploy or teardown side effects
