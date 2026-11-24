@@ -113,9 +113,8 @@ deployment sub create …` trace and the first sign of anything arrives all at
 - CI pins Python `3.11` literally, **not** via `.python-version` — that file is
   git-ignored, so do not rely on it existing locally either.
 
-## Build mode: learning-first, agent-guided
+## Build mode: plan-first, agent-implemented
 
-- The human builds by hand. The agent does **not** big-bang implement.
 - Work is **strictly sequential**, starting at **Phase 1**. One phase at a time, no
   skipping ahead, no pre-implementation of future phases. Scaffolding a Phase 2
   field in Phase 1 is tempting and wrong.
@@ -125,22 +124,14 @@ deployment sub create …` trace and the first sign of anything arrives all at
      implementations, manual verification checks, demo gate) plus one `step-x.md`
      per ordered step carrying that step's instructions, stub shapes and its own
      verification checks.
-  2. Human implements by hand following the brief. Agent answers questions and
-     unblocks on errors but does not take over.
-  3. Agent sanity-checks what was built (human shows or pastes output) before the
-     next phase brief is issued.
+  2. Agent implements the code changes following the brief, running the local
+     verification gates (pytest, bicep build + format, `bash -n`, shellcheck,
+     `./scripts/check-logging.sh`) as it goes. No deploy or teardown side effects
+     unless explicitly requested.
+  3. Agent opens a pull request for review; never pushes to `main`. Human reviews
+     and merges. Agent does not begin the next phase until the PR is merged.
 
-### Phase 1 exception — agent-implemented (2026-10-15)
-
-**Phase 1 was built by the agent, not by hand**, at the owner's explicit
-instruction. Steps 1–11 were implemented and deployed live against the
-development subscription. Steps 2–4 remain accurate as instruction; steps 8, 8a
-and 9 carry corrections from what the live runs revealed (see below).
-
-This is an exception, not a change of mode. **Phases 2+ follow the contract
-above** unless the owner says otherwise at the time. If a phase is ever
-agent-implemented again, record it here the same way rather than leaving the
-docs claiming a build style that did not happen.
+### Findings carried forward from Phase 1 live runs
 
 Two findings from the live runs are worth carrying forward, because both looked
 right until exercised against Azure:
