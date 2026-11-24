@@ -75,3 +75,13 @@ Nothing user-facing ships; the deliverable is documentation hygiene + tooling.
 Show: PLAN.md with a short "Completed" footnote section; `docs/README.md` index;
 a passing `check-docs.sh` run; and a deliberately duplicated paragraph that the
 check rejects.
+
+## Step details
+
+1. **Inventory** — list every `.md` under `docs/` and top-level; assign each a single owner/authoritative location; record in `docs/README.md`. Verify with `./scripts/check-docs.sh`.
+2. **Move completed detail out of PLAN.md** — keep one-line summaries + links in a "Completed" footnote section at the bottom of `PLAN.md`; detail stays in `docs/phase-N/` and topic READMEs. Verify no duplicated invariants via jscpd.
+3. **Topic README stubs** — create `apps/web/README.md`, `bffs/api-bff/README.md`, `backends/domain/README.md`, `backends/data/README.md`, `infra/README.md`, `scripts/README.md` with scope, owner, how-to-run, links. No duplicated invariants.
+4. **Reconcile AGENTS.md** — "Current state" points at PLAN.md; no duplicated status claims.
+5. **Update `docs/architecture.md`** — record occurrence split threshold and any other deferred notes so it is current.
+6. **CI check** — add `scripts/check-docs.sh` (current-phase consistency, link validity, jscpd duplication) and wire into `.github/workflows/ci.yml`; add `pnpm check:docs` script for local parity.
+7. **jscpd config** — `.jscpd.json` with sensible thresholds (e.g., min 50 tokens, 5% max duplication) scoped to `docs/` + top-level READMEs/AGENTS.md.
