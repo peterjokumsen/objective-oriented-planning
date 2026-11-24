@@ -8,10 +8,11 @@
 
 ## Current state
 
-Phase 1 is **built but not yet committed** — `infra/`, `api/` and `scripts/`
-exist and have been deployed live, teardown and redeployed. See
-`docs/phase-1/_brief.md` for the step files and § Build mode below for how it
-was built. `web/` does not exist yet; theming lands with it in Phase 4.
+Source of truth for current phase / completed work is `docs/PLAN.md` (top section
+and its "Completed" footnote). Do not duplicate status claims here. As of the
+last update, Phases 1–3 are complete and committed; Phase 4 (documentation
+review / single source of truth) is next. See `docs/phase-N/_brief.md` for each
+phase's steps.
 
 `.github/workflows/teardown.yml` is **armed**: every step delegates to
 `scripts/teardown.sh` (`--precheck` → `--purge-vault` → `--verify`) and no
@@ -31,6 +32,10 @@ no gate.
 ## Workflow
 
 - Changes land via branch + PR into `main`. Do not push to `main` directly.
+- **Phase branches.** On starting a phase, create a branch named
+  `phase-<n>-<brief-summary>` (e.g. `phase-4-docs-single-source-of-truth`).
+  On completion of the phase, open a pull request into `main` for review; do not
+  merge without review. One phase per branch/PR.
 - After checkout run `pre-commit install` once. Hooks run on `git commit` and only
   touch staged files. Never `pre-commit run --all-files` except for a deliberate
   baseline — CI does that.
