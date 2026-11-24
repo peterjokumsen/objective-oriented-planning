@@ -1,5 +1,12 @@
 # Web app (Angular PWA)
 
-Scope: Angular PWA frontend.
+## Scope
 
-Owner: peter. How to run: `pnpm nx serve web`. Tests: `pnpm nx test web`.
+Angular PWA frontend.
+
+## How to use
+
+```bash
+pnpm nx serve web
+pnpm nx test web
+```

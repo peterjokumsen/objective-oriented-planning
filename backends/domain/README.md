@@ -1,5 +1,11 @@
 # Domain backend (C#)
 
-Scope: domain types, rollup and block scoring pure functions.
+## Scope
 
-Owner: peter. Tests: `dotnet test backends/domain.Tests`.
+Domain types, rollup and block scoring pure functions.
+
+## How to use
+
+```bash
+dotnet test backends/domain.Tests
+```

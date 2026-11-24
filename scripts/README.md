@@ -1,5 +1,12 @@
 # Scripts
 
-Scope: deploy/teardown/cost-control and doc checks.
+## Scope
 
-Owner: peter. Shell checks: `bash -n scripts/*.sh && shellcheck --severity=warning scripts/*.sh`.
+Deploy/teardown/cost-control and doc checks.
+
+## How to use
+
+```bash
+bash -n scripts/*.sh
+shellcheck --severity=warning scripts/*.sh
+```

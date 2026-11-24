@@ -1,5 +1,11 @@
 # Infrastructure (Bicep)
 
-Scope: Bicep modules and deployment scripts.
+## Scope
 
-Owner: peter. Validate: `./scripts/validate-bicep.sh`.
+Bicep modules and deployment scripts.
+
+## How to use
+
+```bash
+./scripts/validate-bicep.sh
+```

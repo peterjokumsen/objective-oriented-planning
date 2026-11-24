@@ -1,5 +1,11 @@
 # Data backend (C#)
 
-Scope: Cosmos data access layer.
+## Scope
 
-Owner: peter.
+Cosmos data access layer.
+
+## How to use
+
+```bash
+dotnet build backends/data
+```
