@@ -952,3 +952,4 @@ comfort.
 - **Phase 1 — Foundation** — `docs/phase-1/`. Infra, skeleton API, cost control, teardown/CI.
 - **Phase 2 — Architecture/Frameworks/UI skeleton** — Nx monorepo, Angular PWA, C# Functions BFF, domain/data libs, OpenAPI TS client. See `apps/`, `bffs/`, `backends/`, `libs/`.
 - **Phase 3 — Data + core API** — `docs/phase-3/`. Cosmos serverless, domain types, rollup + block scoring, `_etag` write path. See `backends/domain/`, `backends/data/`.
+- **Phase 4 — Documentation review / single source of truth** — `docs/phase-4/`. Doc ownership, README index, topic READMEs, CI doc check, jscpd. See `docs/README.md`, `scripts/check-docs.sh`.
