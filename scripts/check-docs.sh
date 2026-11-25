@@ -6,7 +6,6 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 # 1. Current-phase consistency: PLAN.md "current" phase == highest docs/phase-N dir.
-highest_phase=$(ls -d docs/phase-* 2>/dev/null | sed 's#docs/phase-##' | sort -n | tail -1)
 if ! grep -q "Phase 4" docs/PLAN.md; then
   echo "PLAN.md does not reference the current phase." >&2
   exit 1
