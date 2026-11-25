@@ -675,12 +675,14 @@ implementation.
 | #   | Phase                     | Contents                                                                                                                                                                                                                                                                                       |
 | --- | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1   | Foundation                | Bicep: resource group, shared RG, ACR, App Configuration, Key Vault, Log Analytics; skeleton API on Container Apps (min replicas 0, revisions day one); repo scaffold **with `pre-commit` + `.editorconfig` in the first commit**; `teardown.sh` + nightly CI teardown workflow with pre-check |
-| 2   | Data + core API           | Cosmos DB serverless (single container, `planId` partition key), domain types including `timezone` / tier / grant / `isPublic` fields, weighted rollup and block scoring as **pure, unit-tested functions**, `_etag`-checked write path                                                        |
-| 3   | Identity + invites        | Magic-link claim, Easy Auth owner sign-in, participants, helper subtree assignment, observer grants / denyLists / tiers, per-plan invites                                                                                                                                                      |
-| 4   | Tree UI + permissions     | Tree view, status edits, subtree enforcement server-side, owner proposal inbox, participant management, observer preview; **notes entity and the UI that renders them**                                                                                                                        |
-| 5   | Coach agent               | Clarify → staged decompose with weight proposals → on-demand coaching cards; SMART soft checks; **stale-approval presented as a review step**; config via `config.py` + App Configuration                                                                                                      |
-| 6   | Unattended coaching       | Daily Container Apps Job sweeping stalled and blocked leaves; repeatable coaching (damped, opt-in); decide here whether App Configuration should drive thresholds                                                                                                                              |
-| 7   | Observability + hardening | OpenTelemetry end-to-end, KQL workbook, alerting on job failures, teardown verification hardening                                                                                                                                                                                              |
+| 2   | Architecture/Frameworks/UI skeleton | Nx monorepo (pnpm), Angular PWA, C# Azure Functions (isolated, .NET 10) BFF via REPR, C# domain/data libs, OpenAPI-generated TS client |
+| 3   | Data + core API           | Cosmos DB serverless (single container, `planId` partition key), domain types including `timezone` / tier / grant / `isPublic` fields, weighted rollup and block scoring as **pure, unit-tested functions**, `_etag`-checked write path                                                        |
+| 4   | Documentation review / single source of truth | Reconcile AGENTS.md, PLAN.md, phase briefs, architecture.md; establish doc ownership + staleness rules; move completed-phase detail out of PLAN.md into phase/topic docs |
+| 5   | Identity + invites        | Magic-link claim, Easy Auth owner sign-in, participants, helper subtree assignment, observer grants / denyLists / tiers, per-plan invites                                                                                                                                                      |
+| 6   | Tree UI + permissions     | Tree view, status edits, subtree enforcement server-side, owner proposal inbox, participant management, observer preview; **notes entity and the UI that renders them**                                                                                                                        |
+| 7   | Coach agent               | Clarify → staged decompose with weight proposals → on-demand coaching cards; SMART soft checks; **stale-approval presented as a review step**; config via `config.py` + App Configuration                                                                                                      |
+| 8   | Unattended coaching       | Daily Container Apps Job sweeping stalled and blocked leaves; repeatable coaching (damped, opt-in); decide here whether App Configuration should drive thresholds                                                                                                                              |
+| 9   | Observability + hardening | OpenTelemetry end-to-end, KQL workbook, alerting on job failures, teardown verification hardening                                                                                                                                                                                              |
 
 **Build starts at Phase 1**, full plan, sequential.
 
@@ -942,3 +944,12 @@ would work against that by baking colours into components at build time. A
 library remains worth revisiting if the tree view turns into something a
 hand-rolled component set cannot carry — but the bar is set by theming, not by
 comfort.
+
+---
+
+## Completed phases (footnotes)
+
+- **Phase 1 — Foundation** — `docs/phase-1/`. Infra, skeleton API, cost control, teardown/CI.
+- **Phase 2 — Architecture/Frameworks/UI skeleton** — Nx monorepo, Angular PWA, C# Functions BFF, domain/data libs, OpenAPI TS client. See `apps/`, `bffs/`, `backends/`, `libs/`.
+- **Phase 3 — Data + core API** — `docs/phase-3/`. Cosmos serverless, domain types, rollup + block scoring, `_etag` write path. See `backends/domain/`, `backends/data/`.
+- **Phase 4 — Documentation review / single source of truth** — `docs/phase-4/`. Doc ownership, README index, topic READMEs, CI doc check, jscpd. See `docs/README.md`, `scripts/check-docs.sh`.

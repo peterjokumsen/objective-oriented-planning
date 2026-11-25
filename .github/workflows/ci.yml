@@ -221,3 +221,18 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm nx build web
       - run: pnpm nx test web
+
+  docs:
+    name: Docs (single source of truth)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check:docs

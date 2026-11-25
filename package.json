@@ -6,7 +6,8 @@
     "build": "nx run-many -t build",
     "test": "nx run-many -t test",
     "lint": "nx run-many -t lint",
-    "typecheck": "nx run-many -t typecheck"
+    "typecheck": "nx run-many -t typecheck",
+    "check:docs": "bash scripts/check-docs.sh"
   },
   "private": true,
   "dependencies": {
@@ -41,6 +42,7 @@
     "@types/node": "^22.0.0",
     "jsdom": "^27.1.0",
     "nx": "24.0.6",
+    "jscpd": "^4.0.5",
     "prettier": "~3.6.2",
     "tslib": "^2.3.0",
     "typescript": "~6.0.3",
